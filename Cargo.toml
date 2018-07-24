@@ -1,0 +1,18 @@
+[package]
+name = "actix-lua"
+version = "0.1.0"
+authors = ["Poga Po <poga.bahamut@gmail.com>"]
+
+[lib]
+name = "actix_lua"
+path = "src/lib.rs"
+
+[[bin]]
+name = "actix-lua"
+path = "src/bin.rs"
+
+[dependencies]
+actix = "0.7"
+futures = "*"
+tokio = "*"
+rlua = "*"
