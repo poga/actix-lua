@@ -1,11 +1,5 @@
-pub fn test() {
-    println!("TEST")
-}
+extern crate actix;
+extern crate rlua;
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}
+pub mod actor;
+pub mod message;
