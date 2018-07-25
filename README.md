@@ -25,14 +25,14 @@ extern crate actix_lua;
 use actix_lua::{LuaActor, LuaMessage};
 
 fn main () {
-  let system = System::new("test");
-  let addr = LuaActor::new(r#"
-    function handle(msg)
-      return msg + 42
-    end
-  "#).unwrap().start();
+    let system = System::new("test");
+    let addr = LuaActor::new(r#"
+      function handle(msg)
+        return msg + 42
+      end
+    "#).unwrap().start();
 
-  let res = add.send(LuaMessage:from(123));
+    let res = add.send(LuaMessage:from(123));
 }
 ```
 
