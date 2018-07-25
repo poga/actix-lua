@@ -1,6 +1,3 @@
-extern crate actix;
-extern crate rlua;
-
 use actix::dev::{MessageResponse, ResponseChannel};
 use actix::prelude::*;
 use rlua::Result as LuaResult;

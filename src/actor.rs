@@ -1,7 +1,3 @@
-extern crate actix;
-extern crate rlua;
-extern crate tokio;
-
 use actix::prelude::*;
 use rlua::Error as LuaError;
 use rlua::{FromLua, Function, Lua, Value};
@@ -62,7 +58,7 @@ impl Handler<LuaMessage> for LuaActor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use actor::tokio::prelude::Future;
+    use tokio::prelude::Future;
 
     #[test]
     fn lua_actor() {
