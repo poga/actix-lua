@@ -20,7 +20,7 @@ impl LuaActor {
         let vm = Lua::new();
         vm.eval::<()>(&script, Some("Init"))?;
 
-        Result::Ok(LuaActor { vm: vm })
+        Result::Ok(LuaActor { vm })
     }
 
     pub fn new_from_file(path: &str) -> Result<LuaActor, LuaError> {

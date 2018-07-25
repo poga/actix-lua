@@ -47,7 +47,7 @@ macro_rules! lua_message_convert_int {
     ($x:ty) => {
         impl From<$x> for LuaMessage {
             fn from(s: $x) -> Self {
-                LuaMessage::Integer(s as i64)
+                LuaMessage::Integer(i64::from(s))
             }
         }
     };
@@ -60,14 +60,24 @@ lua_message_convert_int!(u16);
 lua_message_convert_int!(i32);
 lua_message_convert_int!(u32);
 lua_message_convert_int!(i64);
-lua_message_convert_int!(isize);
-lua_message_convert_int!(usize);
+
+impl From<usize> for LuaMessage {
+    fn from(s: usize) -> Self {
+        LuaMessage::Integer(s as i64)
+    }
+}
+
+impl From<isize> for LuaMessage {
+    fn from(s: isize) -> Self {
+        LuaMessage::Integer(s as i64)
+    }
+}
 
 macro_rules! lua_message_convert_float {
     ($x:ty) => {
         impl From<$x> for LuaMessage {
             fn from(s: $x) -> Self {
-                LuaMessage::Number(s as f64)
+                LuaMessage::Number(f64::from(s))
             }
         }
     };
