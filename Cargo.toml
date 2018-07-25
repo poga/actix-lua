@@ -7,10 +7,6 @@ authors = ["Poga Po <poga.bahamut@gmail.com>"]
 name = "actix_lua"
 path = "src/lib.rs"
 
-[[bin]]
-name = "actix-lua"
-path = "src/bin.rs"
-
 [dependencies]
 actix = "0.7"
 futures = "*"

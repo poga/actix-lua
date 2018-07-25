@@ -6,7 +6,7 @@ use actix::prelude::*;
 use rlua::Result as LuaResult;
 use rlua::{FromLua, Lua, ToLua, Value};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum LuaMessage {
     String(String),
     Integer(i64),
@@ -99,5 +99,77 @@ impl<'lua> ToLua<'lua> for LuaMessage {
             LuaMessage::Boolean(x) => Ok(Value::Boolean(x)),
             LuaMessage::Nil => Ok(Value::Nil),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::mem::discriminant;
+
+    #[test]
+    fn constructors() {
+        assert_eq!(LuaMessage::from(42), LuaMessage::Integer(42));
+        assert_eq!(
+            LuaMessage::from("foo"),
+            LuaMessage::String("foo".to_string())
+        );
+        assert_eq!(LuaMessage::from(42.5), LuaMessage::Number(42.5));
+        assert_eq!(LuaMessage::from(true), LuaMessage::Boolean(true));
+    }
+
+    #[test]
+    fn to_lua() {
+        // we only check if they have the correct variant
+        let lua = Lua::new();
+        assert_eq!(
+            discriminant(&LuaMessage::Integer(42).to_lua(&lua).unwrap()),
+            discriminant(&Value::Integer(42))
+        );
+        assert_eq!(
+            discriminant(&LuaMessage::String("foo".to_string()).to_lua(&lua).unwrap()),
+            discriminant(&Value::String(lua.create_string("foo").unwrap()))
+        );
+        assert_eq!(
+            discriminant(&LuaMessage::Number(42.5).to_lua(&lua).unwrap()),
+            discriminant(&Value::Number(42.5))
+        );
+        assert_eq!(
+            discriminant(&LuaMessage::Boolean(true).to_lua(&lua).unwrap()),
+            discriminant(&Value::Boolean(true))
+        );
+        assert_eq!(
+            discriminant(&LuaMessage::Nil.to_lua(&lua).unwrap()),
+            discriminant(&Value::Nil)
+        );
+    }
+
+    #[test]
+    fn from_lua() {
+        // we only check if they have the correct variant
+        let lua = Lua::new();
+        assert_eq!(
+            discriminant(&LuaMessage::from_lua(Value::Integer(42), &lua).unwrap()),
+            discriminant(&LuaMessage::Integer(42))
+        );
+        assert_eq!(
+            discriminant(&LuaMessage::from_lua(Value::Number(42.5), &lua).unwrap()),
+            discriminant(&LuaMessage::Number(42.5))
+        );
+        assert_eq!(
+            discriminant(&LuaMessage::from_lua(
+                Value::String(lua.create_string("foo").unwrap()),
+                &lua
+            ).unwrap()),
+            discriminant(&LuaMessage::String("foo".to_string()))
+        );
+        assert_eq!(
+            discriminant(&LuaMessage::from_lua(Value::Boolean(true), &lua).unwrap()),
+            discriminant(&LuaMessage::Boolean(true))
+        );
+        assert_eq!(
+            discriminant(&LuaMessage::from_lua(Value::Nil, &lua).unwrap()),
+            discriminant(&LuaMessage::Nil)
+        );
     }
 }
