@@ -1,11 +1,8 @@
 # Actix-Lua
 
+[![](http://meritbadge.herokuapp.com/actix-lua)](https://crates.io/crates/actix-lua)
+
 [Actix](https://github.com/actix/actix) actor with [Lua](https://www.lua.org/).
-
-## Features
-
-* Handling messages with Lua
-* Dynamic message type
 
 ## Usage
 
