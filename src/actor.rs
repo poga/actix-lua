@@ -133,4 +133,33 @@ mod tests {
 
         system.run();
     }
+
+    #[test]
+    fn lua_actor_state() {
+        let system = System::new("test");
+
+        let lua_addr = LuaActor::new(
+            r#"
+        state = 1
+
+        function handle(msg)
+            state = state + 1
+            return state
+        end
+        "#,
+        ).unwrap()
+            .start();
+
+        let l = lua_addr.send(LuaMessage::Nil);
+        Arbiter::spawn(l.map(move |res| {
+            assert_eq!(res, LuaMessage::from(2));
+            let l2 = lua_addr.send(LuaMessage::Nil);
+            Arbiter::spawn(l2.map(|res| {
+                assert_eq!(res, LuaMessage::from(3));
+                System::current().stop();
+            }).map_err(|e| println!("actor dead {}", e)));
+        }).map_err(|e| println!("actor dead {}", e)));
+
+        system.run();
+    }
 }
