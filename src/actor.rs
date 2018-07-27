@@ -34,14 +34,20 @@ impl Actor for LuaActor {
 
     fn started(&mut self, _: &mut Context<Self>) {
         let globals = self.vm.globals();
-        let lua_handle: Function = globals.get("started").unwrap();
-        lua_handle.call::<(), ()>(()).unwrap()
+        let lua_handle: Result<Function, LuaError> = globals.get("started");
+
+        if let Ok(f) = lua_handle {
+            f.call::<(), ()>(()).unwrap();
+        }
     }
 
     fn stopped(&mut self, _: &mut Context<Self>) {
         let globals = self.vm.globals();
-        let lua_handle: Function = globals.get("stopped").unwrap();
-        lua_handle.call::<(), ()>(()).unwrap()
+        let lua_handle: Result<Function, LuaError> = globals.get("stopped");
+
+        if let Ok(f) = lua_handle {
+            f.call::<(), ()>(()).unwrap();
+        }
     }
 }
 
@@ -58,6 +64,7 @@ impl Handler<LuaMessage> for LuaActor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
     use tokio::prelude::Future;
 
     #[test]
@@ -69,7 +76,58 @@ mod tests {
         let l = lua_addr.send(LuaMessage::from(3));
         Arbiter::spawn(l.map(|res| {
             assert_eq!(res, LuaMessage::from(423));
-            println!("GOT {:?}", res);
+            System::current().stop();
+        }).map_err(|e| println!("actor dead {}", e)));
+
+        system.run();
+    }
+
+    #[test]
+    fn lua_actor_table() {
+        let system = System::new("test");
+
+        let lua_addr = LuaActor::new(
+            r#"
+        function handle(msg)
+            return {x = 1}
+        end
+        "#,
+        ).unwrap()
+            .start();
+
+        let l = lua_addr.send(LuaMessage::from(3));
+        Arbiter::spawn(l.map(|res| {
+            let mut t = HashMap::new();
+            t.insert("x".to_string(), LuaMessage::from(1));
+
+            assert_eq!(res, LuaMessage::from(t));
+            System::current().stop();
+        }).map_err(|e| println!("actor dead {}", e)));
+
+        system.run();
+    }
+
+    #[test]
+    fn lua_actor_started_hook_is_not_function() {
+        let system = System::new("test");
+
+        let lua_addr = LuaActor::new(
+            r#"
+        started = 1
+
+        function handle(msg)
+            return {x = 1}
+        end
+        "#,
+        ).unwrap()
+            .start();
+
+        let l = lua_addr.send(LuaMessage::from(3));
+        Arbiter::spawn(l.map(|res| {
+            let mut t = HashMap::new();
+            t.insert("x".to_string(), LuaMessage::from(1));
+
+            assert_eq!(res, LuaMessage::from(t));
             System::current().stop();
         }).map_err(|e| println!("actor dead {}", e)));
 
