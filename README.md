@@ -33,23 +33,9 @@ fn main () {
 }
 ```
 
-## Message Type
+## Message
 
-`LuaActor` only accept messages with type `LuaMessage`. The result of `LuaMessage` is also `LuaMessage`.
-
-`LuaMessage` is defined as:
-
-```rust
-pub enum LuaMessage {
-    String(String),
-    Integer(i64),
-    Number(f64),
-    Boolean(bool),
-    Nil,
-}
-```
-
-It's the sender's job to check the returned value type from Lua is what they want.
+Since Lua is a dynamic typed language. We use one message type `LuaMessage` to represent all types of message Lua can send/receive.
 
 ## License
 

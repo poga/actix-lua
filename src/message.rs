@@ -3,6 +3,8 @@ use actix::prelude::*;
 use rlua::Result as LuaResult;
 use rlua::{FromLua, Lua, ToLua, Value};
 
+use std::collections::HashMap;
+
 #[derive(Debug, PartialEq)]
 pub enum LuaMessage {
     String(String),
@@ -10,6 +12,7 @@ pub enum LuaMessage {
     Number(f64),
     Boolean(bool),
     Nil,
+    Table(HashMap<String, LuaMessage>),
 }
 
 impl<A, M> MessageResponse<A, M> for LuaMessage
@@ -70,6 +73,12 @@ impl From<isize> for LuaMessage {
     }
 }
 
+impl From<HashMap<String, LuaMessage>> for LuaMessage {
+    fn from(s: HashMap<String, LuaMessage>) -> Self {
+        LuaMessage::Table(s)
+    }
+}
+
 macro_rules! lua_message_convert_float {
     ($x:ty) => {
         impl From<$x> for LuaMessage {
@@ -91,6 +100,7 @@ impl<'lua> FromLua<'lua> for LuaMessage {
             Value::Number(_) => Ok(LuaMessage::Number(lua.coerce_number(v)? as f64)),
             Value::Boolean(b) => Ok(LuaMessage::Boolean(b)),
             Value::Nil => Ok(LuaMessage::Nil),
+            Value::Table(t) => Ok(LuaMessage::Table(HashMap::from_lua(Value::Table(t), lua)?)),
 
             _ => unimplemented!(),
         }
@@ -105,6 +115,7 @@ impl<'lua> ToLua<'lua> for LuaMessage {
             LuaMessage::Number(x) => Ok(Value::Number(x)),
             LuaMessage::Boolean(x) => Ok(Value::Boolean(x)),
             LuaMessage::Nil => Ok(Value::Nil),
+            LuaMessage::Table(x) => Ok(Value::Table(lua.create_table_from(x)?)),
         }
     }
 }
@@ -123,6 +134,12 @@ mod tests {
         );
         assert_eq!(LuaMessage::from(42.5), LuaMessage::Number(42.5));
         assert_eq!(LuaMessage::from(true), LuaMessage::Boolean(true));
+
+        let mut t = HashMap::new();
+        t.insert("bar".to_string(), LuaMessage::from("abc"));
+        let mut t2 = HashMap::new();
+        t2.insert("bar".to_string(), LuaMessage::from("abc"));
+        assert_eq!(LuaMessage::from(t), LuaMessage::Table(t2));
     }
 
     #[test]
@@ -148,6 +165,13 @@ mod tests {
         assert_eq!(
             discriminant(&LuaMessage::Nil.to_lua(&lua).unwrap()),
             discriminant(&Value::Nil)
+        );
+
+        let mut t = HashMap::new();
+        t.insert("bar".to_string(), LuaMessage::from("abc"));
+        assert_eq!(
+            discriminant(&LuaMessage::Table(t).to_lua(&lua).unwrap()),
+            discriminant(&Value::Table(lua.create_table().unwrap()))
         );
     }
 
@@ -177,6 +201,15 @@ mod tests {
         assert_eq!(
             discriminant(&LuaMessage::from_lua(Value::Nil, &lua).unwrap()),
             discriminant(&LuaMessage::Nil)
+        );
+
+        let mut t = HashMap::new();
+        t.insert("bar".to_string(), LuaMessage::from("abc"));
+        assert_eq!(
+            discriminant(
+                &LuaMessage::from_lua(Value::Table(lua.create_table().unwrap()), &lua).unwrap()
+            ),
+            discriminant(&LuaMessage::Table(t))
         );
     }
 }
