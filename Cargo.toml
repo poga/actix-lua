@@ -20,3 +20,6 @@ actix = "0.7"
 futures = "0.1"
 tokio = "0.1"
 rlua = "0.14"
+
+[dev-dependencies]
+futures-timer = "0.1"

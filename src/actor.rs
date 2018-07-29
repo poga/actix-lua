@@ -4,8 +4,19 @@ use rlua::{FromLua, Function, Lua, Value};
 
 use std::fs::File;
 use std::io::prelude::*;
+use std::time::Duration;
 
 use message::LuaMessage;
+
+const PRELUDE: &str = r#"
+function notify(msg)
+    _notify_rpc(msg)
+end
+
+function notify_later(msg, after)
+    _notify_rpc({_rpc_type = "notify_later", msg = msg, after = after})
+end
+"#;
 
 pub struct LuaActor {
     vm: Lua,
@@ -15,6 +26,7 @@ impl LuaActor {
     pub fn new(script: &str) -> Result<LuaActor, LuaError> {
         let vm = Lua::new();
         vm.eval::<()>(&script, Some("Init"))?;
+        vm.eval::<()>(&PRELUDE, Some("Prelude"))?;
 
         Result::Ok(LuaActor { vm })
     }
@@ -39,12 +51,11 @@ impl LuaActor {
 
             let notify = scope
                 .create_function_mut(|_, msg| {
-                    println!("notified! {:?}", msg);
                     ctx.notify(msg);
                     Ok(())
                 })
                 .unwrap();
-            globals.set("notify", notify).unwrap();
+            globals.set("_notify_rpc", notify).unwrap();
 
             let lua_handle: Result<Function, LuaError> = globals.get(func_name);
             if let Ok(f) = lua_handle {
@@ -72,13 +83,35 @@ impl Handler<LuaMessage> for LuaActor {
     type Result = LuaMessage;
 
     fn handle(&mut self, msg: LuaMessage, ctx: &mut Context<Self>) -> Self::Result {
-        self.invoke_in_scope(ctx, "handle", msg)
+        let mut is_rpc = false;
+
+        if let LuaMessage::Table(t) = msg {
+            if let Some(rpc_type) = t.get("_rpc_type") {
+                is_rpc = true;
+                if *rpc_type == LuaMessage::from("notify_later") {
+                    if let LuaMessage::Integer(d) = t.get("after").unwrap() {
+                        ctx.notify_later(
+                            t.get("msg").unwrap().clone(),
+                            Duration::from_secs(*d as u64),
+                        );
+                    }
+                }
+            }
+            if is_rpc {
+                LuaMessage::Nil
+            } else {
+                self.invoke_in_scope(ctx, "handle", LuaMessage::Table(t))
+            }
+        } else {
+            self.invoke_in_scope(ctx, "handle", msg)
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures_timer::Delay;
     use std::collections::HashMap;
     use tokio::prelude::Future;
 
@@ -190,6 +223,7 @@ mod tests {
         end
 
         function handle(msg)
+            print("handling", msg)
             c = c + msg
             return c
         end
@@ -197,15 +231,46 @@ mod tests {
         ).unwrap()
             .start();
 
-        let l = addr.send(LuaMessage::from(1));
-        Arbiter::spawn(l.map(move |res| {
-            assert_eq!(res, LuaMessage::from(1));
+        let delay = Delay::new(Duration::from_secs(1)).map(move |()| {
+            let l = addr.send(LuaMessage::from(1));
+            Arbiter::spawn(l.map(|res| {
+                assert_eq!(res, LuaMessage::from(101));
+                System::current().stop();
+            }).map_err(|e| println!("actor dead {}", e)))
+        });
+        Arbiter::spawn(delay.map_err(|e| println!("actor dead {}", e)));
+
+        system.run();
+    }
+
+    #[test]
+    fn lua_actor_notify_later() {
+        let system = System::new("test");
+
+        let addr = LuaActor::new(
+            r#"
+        c = 0
+
+        function started()
+            notify_later(100, 1)
+        end
+
+        function handle(msg)
+            print("handling", msg)
+            c = c + msg
+            return c
+        end
+        "#,
+        ).unwrap()
+            .start();
+        let delay = Delay::new(Duration::from_secs(2)).map(move |()| {
             let l2 = addr.send(LuaMessage::from(1));
             Arbiter::spawn(l2.map(|res| {
-                assert_eq!(res, LuaMessage::from(102));
+                assert_eq!(res, LuaMessage::from(101));
                 System::current().stop();
-            }).map_err(|e| println!("actor dead {}", e)));
-        }).map_err(|e| println!("actor dead {}", e)));
+            }).map_err(|e| println!("actor dead {}", e)))
+        });
+        Arbiter::spawn(delay.map_err(|e| println!("actor dead {}", e)));
 
         system.run();
     }

@@ -5,7 +5,7 @@ use rlua::{FromLua, Lua, ToLua, Value};
 
 use std::collections::HashMap;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum LuaMessage {
     String(String),
     Integer(i64),
