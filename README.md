@@ -34,7 +34,7 @@ fn main () {
 }
 ```
 
-## MessageType
+## Messages
 
 Since Lua is a dynamic typed language. We use one message type `LuaMessage` to represent all kind of types of a message Lua can send/receive.
 
