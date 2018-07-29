@@ -4,11 +4,10 @@ use rlua::{FromLua, Function, Lua, Value};
 
 use std::fs::File;
 use std::io::prelude::*;
-use std::time::Duration;
 
 use message::LuaMessage;
 
-const PRELUDE: &str = r#"
+const LUA_PRELUDE: &str = r#"
 function notify(msg)
     _notify_rpc(msg)
 end
@@ -26,7 +25,7 @@ impl LuaActor {
     pub fn new(script: &str) -> Result<LuaActor, LuaError> {
         let vm = Lua::new();
         vm.eval::<()>(&script, Some("Init"))?;
-        vm.eval::<()>(&PRELUDE, Some("Prelude"))?;
+        vm.eval::<()>(&LUA_PRELUDE, Some("Prelude"))?;
 
         Result::Ok(LuaActor { vm })
     }
@@ -83,25 +82,10 @@ impl Handler<LuaMessage> for LuaActor {
     type Result = LuaMessage;
 
     fn handle(&mut self, msg: LuaMessage, ctx: &mut Context<Self>) -> Self::Result {
-        let mut is_rpc = false;
+        if let LuaMessage::RPCNotifyLater(msg, d) = msg {
+            ctx.notify_later(*msg, d);
 
-        if let LuaMessage::Table(t) = msg {
-            if let Some(rpc_type) = t.get("_rpc_type") {
-                is_rpc = true;
-                if *rpc_type == LuaMessage::from("notify_later") {
-                    if let LuaMessage::Integer(d) = t.get("after").unwrap() {
-                        ctx.notify_later(
-                            t.get("msg").unwrap().clone(),
-                            Duration::from_secs(*d as u64),
-                        );
-                    }
-                }
-            }
-            if is_rpc {
-                LuaMessage::Nil
-            } else {
-                self.invoke_in_scope(ctx, "handle", LuaMessage::Table(t))
-            }
+            LuaMessage::Nil
         } else {
             self.invoke_in_scope(ctx, "handle", msg)
         }
@@ -113,6 +97,7 @@ mod tests {
     use super::*;
     use futures_timer::Delay;
     use std::collections::HashMap;
+    use std::time::Duration;
     use tokio::prelude::Future;
 
     #[test]
