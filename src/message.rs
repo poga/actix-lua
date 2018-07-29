@@ -4,6 +4,7 @@ use rlua::Result as LuaResult;
 use rlua::{FromLua, Lua, ToLua, Value};
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum LuaMessage {
@@ -13,6 +14,7 @@ pub enum LuaMessage {
     Boolean(bool),
     Nil,
     Table(HashMap<String, LuaMessage>),
+    RPCNotifyLater(Box<LuaMessage>, Duration),
 }
 
 impl<A, M> MessageResponse<A, M> for LuaMessage
@@ -100,7 +102,24 @@ impl<'lua> FromLua<'lua> for LuaMessage {
             Value::Number(_) => Ok(LuaMessage::Number(lua.coerce_number(v)? as f64)),
             Value::Boolean(b) => Ok(LuaMessage::Boolean(b)),
             Value::Nil => Ok(LuaMessage::Nil),
-            Value::Table(t) => Ok(LuaMessage::Table(HashMap::from_lua(Value::Table(t), lua)?)),
+            Value::Table(t) => {
+                if let Ok(LuaMessage::String(rpc_type)) = t.get("_rpc_type") {
+                    if *rpc_type == *"notify_later" {
+                        if let Ok(LuaMessage::Integer(d)) = t.get("after") {
+                            Ok(LuaMessage::RPCNotifyLater(
+                                Box::new(LuaMessage::from_lua(t.get("msg").unwrap(), lua).unwrap()),
+                                Duration::from_secs(d as u64),
+                            ))
+                        } else {
+                            Ok(LuaMessage::Table(HashMap::from_lua(Value::Table(t), lua)?))
+                        }
+                    } else {
+                        Ok(LuaMessage::Table(HashMap::from_lua(Value::Table(t), lua)?))
+                    }
+                } else {
+                    Ok(LuaMessage::Table(HashMap::from_lua(Value::Table(t), lua)?))
+                }
+            }
 
             _ => unimplemented!(),
         }
@@ -116,6 +135,9 @@ impl<'lua> ToLua<'lua> for LuaMessage {
             LuaMessage::Boolean(x) => Ok(Value::Boolean(x)),
             LuaMessage::Nil => Ok(Value::Nil),
             LuaMessage::Table(x) => Ok(Value::Table(lua.create_table_from(x)?)),
+
+            // You should not create RPCNotifyLater from outside of lua
+            _ => unimplemented!(),
         }
     }
 }
