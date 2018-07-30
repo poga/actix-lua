@@ -14,9 +14,14 @@ pub enum LuaMessage {
     Boolean(bool),
     Nil,
     Table(HashMap<String, LuaMessage>),
+    // msg to notify, after duration
     RPCNotifyLater(Box<LuaMessage>, Duration),
-    RPCNewLuaActor(String, String),
+    // thread id, actor script path
+    RPCNewLuaActor(String),
+    // recipient id, msg
     RPCSend(String, Box<LuaMessage>),
+    // recipient id, msg
+    RPCDoSend(String, Box<LuaMessage>),
 }
 
 impl<A, M> MessageResponse<A, M> for LuaMessage
@@ -44,6 +49,12 @@ impl From<bool> for LuaMessage {
 impl<'l> From<&'l str> for LuaMessage {
     fn from(s: &'l str) -> Self {
         LuaMessage::String(s.to_string())
+    }
+}
+
+impl From<String> for LuaMessage {
+    fn from(s: String) -> Self {
+        LuaMessage::String(s)
     }
 }
 
@@ -121,12 +132,24 @@ impl<'lua> FromLua<'lua> for LuaMessage {
                         }
                         "new_lua_actor" => {
                             if let Ok(LuaMessage::String(path)) = t.get("path") {
-                                Ok(LuaMessage::RPCNewLuaActor(t.get("name").unwrap(), path))
+                                Ok(LuaMessage::RPCNewLuaActor(path))
                             } else {
                                 Ok(LuaMessage::Table(HashMap::from_lua(Value::Table(t), lua)?))
                             }
                         }
                         "send" => {
+                            if let Ok(LuaMessage::String(rec)) = t.get("recipient") {
+                                Ok(LuaMessage::RPCSend(
+                                    rec,
+                                    Box::new(
+                                        LuaMessage::from_lua(t.get("msg").unwrap(), lua).unwrap(),
+                                    ),
+                                ))
+                            } else {
+                                Ok(LuaMessage::Table(HashMap::from_lua(Value::Table(t), lua)?))
+                            }
+                        }
+                        "do_send" => {
                             if let Ok(LuaMessage::String(rec)) = t.get("recipient") {
                                 Ok(LuaMessage::RPCSend(
                                     rec,
@@ -175,6 +198,7 @@ mod tests {
     #[test]
     fn constructors() {
         assert_eq!(LuaMessage::from(42), LuaMessage::Integer(42));
+        assert_eq!(LuaMessage::from(0), LuaMessage::Integer(0));
         assert_eq!(
             LuaMessage::from("foo"),
             LuaMessage::String("foo".to_string())

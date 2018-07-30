@@ -22,11 +22,17 @@ function notify_later(msg, after)
 end
 
 function new_actor(name, path)
-    _notify_rpc({_rpc_type = "new_lua_actor", name = name, path = path})
+    _notify_rpc({_rpc_type = "new_lua_actor", path = path})
+    return coroutine.yield()
 end
 
 function send(recipient, msg)
     _notify_rpc({_rpc_type = "send", recipient = recipient, msg = msg})
+    return coroutine.yield()
+end
+
+function do_send(recipient, msg)
+    _notify_rpc({_rpc_type = "do_send", recipient = recipient, msg = msg})
 end
 
 function _wrapped_handle(msg, threadID)
@@ -42,14 +48,15 @@ function _wrapped_handle(msg, threadID)
         thread = _threads[threadID]
     end
 
-    local err, ret = coroutine.resume(thread, msg)
+    local ok, ret = coroutine.resume(thread, msg)
     return ret
 end
 "#;
 
 pub struct LuaActor {
     vm: Lua,
-    recipients: HashMap<String, Addr<LuaActor>>,
+    recipients: HashMap<String, Recipient<LuaMessage>>,
+    recipient_id_seq: u64,
 }
 
 impl LuaActor {
@@ -61,6 +68,7 @@ impl LuaActor {
         Result::Ok(LuaActor {
             vm,
             recipients: HashMap::new(),
+            recipient_id_seq: 0,
         })
     }
 
@@ -71,6 +79,12 @@ impl LuaActor {
 
         let actor = LuaActor::new(&body)?;
         Result::Ok(actor)
+    }
+
+    pub fn add_recipient(&mut self, rec: Recipient<LuaMessage>) -> Option<Recipient<LuaMessage>> {
+        self.recipient_id_seq += 1;
+        self.recipients
+            .insert(format!("{}", self.recipient_id_seq), rec)
     }
 
     fn invoke_in_scope(
@@ -93,6 +107,35 @@ impl LuaActor {
             let lua_handle: Result<Function, LuaError> = globals.get(func_name);
             if let Ok(f) = lua_handle {
                 LuaMessage::from_lua(f.call::<LuaMessage, Value>(arg).unwrap(), &self.vm).unwrap()
+            } else {
+                LuaMessage::Nil
+            }
+        })
+    }
+
+    fn invoke_in_scope_2(
+        &mut self,
+        ctx: &mut Context<Self>,
+        func_name: &str,
+        args: (LuaMessage, LuaMessage),
+    ) -> <Self as Handler<LuaMessage>>::Result {
+        self.vm.scope(|scope| {
+            let globals = self.vm.globals();
+
+            let notify = scope
+                .create_function_mut(|_, msg| {
+                    ctx.notify(msg);
+                    Ok(())
+                })
+                .unwrap();
+            globals.set("_notify_rpc", notify).unwrap();
+
+            let lua_handle: Result<Function, LuaError> = globals.get(func_name);
+            if let Ok(f) = lua_handle {
+                LuaMessage::from_lua(
+                    f.call::<(LuaMessage, LuaMessage), Value>(args).unwrap(),
+                    &self.vm,
+                ).unwrap()
             } else {
                 LuaMessage::Nil
             }
@@ -122,11 +165,18 @@ impl Handler<LuaMessage> for LuaActor {
 
                 LuaMessage::Nil
             }
-            LuaMessage::RPCNewLuaActor(name, path) => {
+            LuaMessage::RPCNewLuaActor(path) => {
+                // save lua thread id
+                let name = format!("LuaActor-{}-{}", self.recipient_id_seq, path);
                 let addr = LuaActor::new_from_file(&path).unwrap().start();
-                self.recipients.insert(name, addr);
+                self.recipients.insert(name.clone(), addr.recipient());
 
-                LuaMessage::Nil
+                // return recipient ID to lua,
+                self.invoke_in_scope_2(
+                    ctx,
+                    "_wrapped_handle",
+                    (LuaMessage::from(name.clone()), LuaMessage::from(0)),
+                )
             }
 
             _ => self.invoke_in_scope(ctx, "_wrapped_handle", msg),
@@ -308,20 +358,64 @@ mod tests {
 
         let addr = LuaActor::new(
             r#"
-        function started()
-            new_actor("child", "src/test.lua")
+        function handle(msg)
+            if msg == 0 then
+                return msg + 1
+            end
+            local id = new_actor("child", "src/test.lua")
+            print("resumed", id)
+            -- since this is an async coroutine, return is a no-op.
+            return id
         end
         "#,
         ).unwrap()
             .start();
-        let delay = Delay::new(Duration::from_secs(1)).map(move |()| {
-            let l2 = addr.send(LuaMessage::from(1));
+        let l = addr.send(LuaMessage::Nil);
+        Arbiter::spawn(l.map(move |res| {
+            // since the handler yield, we won't get anything in return
+            assert_eq!(res, LuaMessage::Nil);
+
+            // coroutine should still works normally
+            let l2 = addr.send(LuaMessage::from(0));
             Arbiter::spawn(l2.map(|res| {
-                assert_eq!(res, LuaMessage::from(101));
+                assert_eq!(res, LuaMessage::from(1));
                 System::current().stop();
-            }).map_err(|e| println!("actor dead {}", e)))
-        });
-        Arbiter::spawn(delay.map_err(|e| println!("actor dead {}", e)));
+            }).map_err(|e| println!("actor dead {}", e)));
+        }).map_err(|e| println!("actor dead {}", e)));
+
+        system.run();
+    }
+
+    #[test]
+    fn lua_actor_do_send() {
+        let system = System::new("test");
+
+        let addr = LuaActor::new(
+            r#"
+        function handle(msg)
+            if msg == 0 then
+                return msg + 1
+            end
+            local id = new_actor("child", "src/test.lua")
+            print("resumed", id)
+            -- since this is an async coroutine, return is a no-op.
+            return id
+        end
+        "#,
+        ).unwrap()
+            .start();
+        let l = addr.send(LuaMessage::Nil);
+        Arbiter::spawn(l.map(move |res| {
+            // since the handler yield, we won't get anything in return
+            assert_eq!(res, LuaMessage::Nil);
+
+            // coroutine should still works normally
+            let l2 = addr.send(LuaMessage::from(0));
+            Arbiter::spawn(l2.map(|res| {
+                assert_eq!(res, LuaMessage::from(1));
+                System::current().stop();
+            }).map_err(|e| println!("actor dead {}", e)));
+        }).map_err(|e| println!("actor dead {}", e)));
 
         system.run();
     }
