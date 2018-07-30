@@ -1,4 +1,4 @@
-# Actix-Lua
+# actix-lua
 
 [![](http://meritbadge.herokuapp.com/actix-lua)](https://crates.io/crates/actix-lua)
 
