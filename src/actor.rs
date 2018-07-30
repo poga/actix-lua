@@ -2,12 +2,17 @@ use actix::prelude::*;
 use rlua::Error as LuaError;
 use rlua::{FromLua, Function, Lua, Value};
 
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::prelude::*;
 
 use message::LuaMessage;
 
 const LUA_PRELUDE: &str = r#"
+_threads = {}
+
+_thread_id_seq = 0
+
 function notify(msg)
     _notify_rpc(msg)
 end
@@ -15,10 +20,36 @@ end
 function notify_later(msg, after)
     _notify_rpc({_rpc_type = "notify_later", msg = msg, after = after})
 end
+
+function new_actor(name, path)
+    _notify_rpc({_rpc_type = "new_lua_actor", name = name, path = path})
+end
+
+function send(recipient, msg)
+    _notify_rpc({_rpc_type = "send", recipient = recipient, msg = msg})
+end
+
+function _wrapped_handle(msg, threadID)
+    if handle == nil then
+        return nil
+    end
+    local thread
+    if threadID == nil then
+        thread = coroutine.create(handle)
+        _threads[_thread_id_seq] = thread
+        _thread_id_seq = _thread_id_seq + 1
+    else
+        thread = _threads[threadID]
+    end
+
+    local err, ret = coroutine.resume(thread, msg)
+    return ret
+end
 "#;
 
 pub struct LuaActor {
     vm: Lua,
+    recipients: HashMap<String, Addr<LuaActor>>,
 }
 
 impl LuaActor {
@@ -27,7 +58,10 @@ impl LuaActor {
         vm.eval::<()>(&script, Some("Init"))?;
         vm.eval::<()>(&LUA_PRELUDE, Some("Prelude"))?;
 
-        Result::Ok(LuaActor { vm })
+        Result::Ok(LuaActor {
+            vm,
+            recipients: HashMap::new(),
+        })
     }
 
     pub fn new_from_file(path: &str) -> Result<LuaActor, LuaError> {
@@ -82,12 +116,20 @@ impl Handler<LuaMessage> for LuaActor {
     type Result = LuaMessage;
 
     fn handle(&mut self, msg: LuaMessage, ctx: &mut Context<Self>) -> Self::Result {
-        if let LuaMessage::RPCNotifyLater(msg, d) = msg {
-            ctx.notify_later(*msg, d);
+        match msg {
+            LuaMessage::RPCNotifyLater(msg, d) => {
+                ctx.notify_later(*msg, d);
 
-            LuaMessage::Nil
-        } else {
-            self.invoke_in_scope(ctx, "handle", msg)
+                LuaMessage::Nil
+            }
+            LuaMessage::RPCNewLuaActor(name, path) => {
+                let addr = LuaActor::new_from_file(&path).unwrap().start();
+                self.recipients.insert(name, addr);
+
+                LuaMessage::Nil
+            }
+
+            _ => self.invoke_in_scope(ctx, "_wrapped_handle", msg),
         }
     }
 }
@@ -249,6 +291,30 @@ mod tests {
         ).unwrap()
             .start();
         let delay = Delay::new(Duration::from_secs(2)).map(move |()| {
+            let l2 = addr.send(LuaMessage::from(1));
+            Arbiter::spawn(l2.map(|res| {
+                assert_eq!(res, LuaMessage::from(101));
+                System::current().stop();
+            }).map_err(|e| println!("actor dead {}", e)))
+        });
+        Arbiter::spawn(delay.map_err(|e| println!("actor dead {}", e)));
+
+        system.run();
+    }
+
+    #[test]
+    fn lua_actor_rpc_new_actor() {
+        let system = System::new("test");
+
+        let addr = LuaActor::new(
+            r#"
+        function started()
+            new_actor("child", "src/test.lua")
+        end
+        "#,
+        ).unwrap()
+            .start();
+        let delay = Delay::new(Duration::from_secs(1)).map(move |()| {
             let l2 = addr.send(LuaMessage::from(1));
             Arbiter::spawn(l2.map(|res| {
                 assert_eq!(res, LuaMessage::from(101));
