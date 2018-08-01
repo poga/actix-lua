@@ -15,28 +15,7 @@ use message::LuaMessage;
 const LUA_PRELUDE: &str = r#"
 __threads = {}
 __thread_id_seq = 0
-
-function notify(msg)
-    __rpc(msg)
-end
-
-function notify_later(msg, after)
-    __rpc({_rpc_type = "notify_later", msg = msg, after = after})
-end
-
-function new_actor(name, path)
-    __rpc({_rpc_type = "new_lua_actor", path = path})
-    return coroutine.yield()
-end
-
-function send(recipient, msg)
-    __rpc({_rpc_type = "send", recipient = recipient, msg = msg})
-    return coroutine.yield()
-end
-
-function do_send(recipient, msg)
-    __rpc({_rpc_type = "do_send", recipient = recipient, msg = msg})
-end
+__states = {}
 
 -- create a new coroutine from given script
 function __run(script, msg)
@@ -55,6 +34,7 @@ function __run(script, msg)
     ctx.do_send = do_send
     ctx.new_actor = new_actor
     ctx.msg = msg
+    ctx.state = __states[script]
 
     env.ctx = ctx
 
@@ -65,6 +45,9 @@ function __run(script, msg)
     -- save the thread and its context if the thread yielded
     if coroutine.status(thread) == "suspended" then
         __threads[env.thread_id] = { thread = thread, ctx = ctx }
+    end
+    if ctx.state ~= nil then
+        __states[script] = ctx.state
     end
     return ret
 end
@@ -293,35 +276,13 @@ impl Handler<LuaMessage> for LuaActor {
 
     fn handle(&mut self, msg: LuaMessage, ctx: &mut Context<Self>) -> Self::Result {
         let handle_script = self.handle_script.clone();
-        match msg {
-            LuaMessage::RPCNotifyLater(msg, d) => {
-                ctx.notify_later(*msg, d);
-
-                LuaMessage::Nil
-            }
-            // LuaMessage::RPCNewLuaActor(path) => {
-            //     // save lua thread id
-            //     let name = format!("LuaActor-{}-{}", self.recipient_id_seq, path);
-            //     let addr = LuaActor::new_from_file(&path).unwrap().start();
-            //     self.recipients
-            //         .get_mut()
-            //         .insert(name.clone(), addr.recipient());
-
-            //     // return recipient ID to lua,
-            //     self.invoke_in_scope_2(
-            //         ctx,
-            //         "_wrapped_handle",
-            //         (LuaMessage::from(name.clone()), LuaMessage::from(0)),
-            //     )
-            // }
-            _ => invoke(
-                ctx,
-                &mut self.vm,
-                &mut self.recipients,
-                "__run",
-                vec![handle_script, msg],
-            ),
-        }
+        invoke(
+            ctx,
+            &mut self.vm,
+            &mut self.recipients,
+            "__run",
+            vec![handle_script, msg],
+        )
     }
 }
 
@@ -349,41 +310,12 @@ mod tests {
     }
 
     #[test]
-    fn lua_actor_table() {
+    fn lua_actor_return_table() {
         let system = System::new("test");
 
         let lua_addr = LuaActor::new(
             r#"
-        function handle(msg)
-            return {x = 1}
-        end
-        "#,
-        ).unwrap()
-            .start();
-
-        let l = lua_addr.send(LuaMessage::from(3));
-        Arbiter::spawn(l.map(|res| {
-            let mut t = HashMap::new();
-            t.insert("x".to_string(), LuaMessage::from(1));
-
-            assert_eq!(res, LuaMessage::from(t));
-            System::current().stop();
-        }).map_err(|e| println!("actor dead {}", e)));
-
-        system.run();
-    }
-
-    #[test]
-    fn lua_actor_started_hook_is_not_function() {
-        let system = System::new("test");
-
-        let lua_addr = LuaActor::new(
-            r#"
-        started = 1
-
-        function handle(msg)
-            return {x = 1}
-        end
+        return {x = 1}
         "#,
         ).unwrap()
             .start();
@@ -406,22 +338,20 @@ mod tests {
 
         let lua_addr = LuaActor::new(
             r#"
-        state = 1
+        if not ctx.state then ctx.state = 0 end
 
-        function handle(msg)
-            state = state + 1
-            return state
-        end
+        ctx.state = ctx.state + 1
+        return ctx.state
         "#,
         ).unwrap()
             .start();
 
         let l = lua_addr.send(LuaMessage::Nil);
         Arbiter::spawn(l.map(move |res| {
-            assert_eq!(res, LuaMessage::from(2));
+            assert_eq!(res, LuaMessage::from(1));
             let l2 = lua_addr.send(LuaMessage::Nil);
             Arbiter::spawn(l2.map(|res| {
-                assert_eq!(res, LuaMessage::from(3));
+                assert_eq!(res, LuaMessage::from(2));
                 System::current().stop();
             }).map_err(|e| println!("actor dead {}", e)));
         }).map_err(|e| println!("actor dead {}", e)));

@@ -14,14 +14,6 @@ pub enum LuaMessage {
     Boolean(bool),
     Nil,
     Table(HashMap<String, LuaMessage>),
-    // msg to notify, after duration
-    RPCNotifyLater(Box<LuaMessage>, Duration),
-    // thread id, actor script path
-    RPCNewLuaActor(String),
-    // recipient id, msg
-    RPCSend(String, Box<LuaMessage>),
-    // recipient id, msg
-    RPCDoSend(String, Box<LuaMessage>),
 }
 
 impl<A, M> MessageResponse<A, M> for LuaMessage
@@ -115,59 +107,7 @@ impl<'lua> FromLua<'lua> for LuaMessage {
             Value::Number(_) => Ok(LuaMessage::Number(lua.coerce_number(v)? as f64)),
             Value::Boolean(b) => Ok(LuaMessage::Boolean(b)),
             Value::Nil => Ok(LuaMessage::Nil),
-            Value::Table(t) => {
-                if let Ok(LuaMessage::String(rpc_type)) = t.get("_rpc_type") {
-                    match rpc_type.as_ref() {
-                        "notify_later" => {
-                            if let Ok(LuaMessage::Integer(d)) = t.get("after") {
-                                Ok(LuaMessage::RPCNotifyLater(
-                                    Box::new(
-                                        LuaMessage::from_lua(t.get("msg").unwrap(), lua).unwrap(),
-                                    ),
-                                    Duration::from_secs(d as u64),
-                                ))
-                            } else {
-                                Ok(LuaMessage::Table(HashMap::from_lua(Value::Table(t), lua)?))
-                            }
-                        }
-                        "new_lua_actor" => {
-                            if let Ok(LuaMessage::String(path)) = t.get("path") {
-                                Ok(LuaMessage::RPCNewLuaActor(path))
-                            } else {
-                                Ok(LuaMessage::Table(HashMap::from_lua(Value::Table(t), lua)?))
-                            }
-                        }
-                        "send" => {
-                            if let Ok(LuaMessage::String(rec)) = t.get("recipient") {
-                                Ok(LuaMessage::RPCSend(
-                                    rec,
-                                    Box::new(
-                                        LuaMessage::from_lua(t.get("msg").unwrap(), lua).unwrap(),
-                                    ),
-                                ))
-                            } else {
-                                Ok(LuaMessage::Table(HashMap::from_lua(Value::Table(t), lua)?))
-                            }
-                        }
-                        "do_send" => {
-                            if let Ok(LuaMessage::String(rec)) = t.get("recipient") {
-                                Ok(LuaMessage::RPCSend(
-                                    rec,
-                                    Box::new(
-                                        LuaMessage::from_lua(t.get("msg").unwrap(), lua).unwrap(),
-                                    ),
-                                ))
-                            } else {
-                                Ok(LuaMessage::Table(HashMap::from_lua(Value::Table(t), lua)?))
-                            }
-                        }
-
-                        _ => Ok(LuaMessage::Table(HashMap::from_lua(Value::Table(t), lua)?)),
-                    }
-                } else {
-                    Ok(LuaMessage::Table(HashMap::from_lua(Value::Table(t), lua)?))
-                }
-            }
+            Value::Table(t) => Ok(LuaMessage::Table(HashMap::from_lua(Value::Table(t), lua)?)),
 
             _ => unimplemented!(),
         }
