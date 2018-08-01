@@ -1,8 +1,2 @@
-function started()
-  print("lua actor started")
-end
-
-function handle(msg)
-  print('lua received', msg)
-  return 420 + msg
-end
+print('lua received', ctx.msg)
+return 420 + ctx.msg
