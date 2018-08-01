@@ -21,6 +21,7 @@ futures = "0.1"
 tokio = "0.1"
 rlua = "0.14"
 uuid = { version = "0.6", features = ["v4"] }
+rust-embed = "3.0"
 
 [dev-dependencies]
 futures-timer = "0.1"

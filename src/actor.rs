@@ -6,63 +6,15 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::prelude::*;
-use std::rc::Rc;
+use std::str;
 use std::time::Duration;
 use uuid::Uuid;
 
 use message::LuaMessage;
 
-const LUA_PRELUDE: &str = r#"
-__threads = {}
-__thread_id_seq = 0
-__states = {}
-
--- create a new coroutine from given script
-function __run(script, msg)
-    -- create a new env
-    local env = {}
-    for k, v in pairs(_G) do
-        env[k] = v
-    end
-    env.thread_id = __thread_id_seq
-    __thread_id_seq = __thread_id_seq + 1
-
-    local ctx = {}
-    ctx.notify = notify
-    ctx.notify_later = notify_later
-    ctx.send = send
-    ctx.do_send = do_send
-    ctx.new_actor = new_actor
-    ctx.msg = msg
-    ctx.state = __states[script]
-
-    env.ctx = ctx
-
-    local f = load(script, name, "bt", env)
-    local thread = coroutine.create(f)
-
-    local ok, ret = coroutine.resume(thread)
-    -- save the thread and its context if the thread yielded
-    if coroutine.status(thread) == "suspended" then
-        __threads[env.thread_id] = { thread = thread, ctx = ctx }
-    end
-    if ctx.state ~= nil then
-        __states[script] = ctx.state
-    end
-    return ret
-end
-
--- resume a existing coroutine
-function __resume(thread_id, args)
-    local thread = __threads[thread_id]
-    local ok, ret = coroutine.resume(thread, args)
-    if coroutine.status(thread) == "dead" then
-        __threads[env.thread_id] = nil
-    end
-    return ret
-end
-
-"#;
+#[derive(RustEmbed)]
+#[folder = "src/lua/"]
+struct Asset;
 
 pub struct LuaActor {
     vm: Lua,
@@ -74,7 +26,8 @@ impl LuaActor {
     pub fn new(script: &str) -> Result<LuaActor, LuaError> {
         let vm = Lua::new();
         // vm.eval::<()>(&script, Some("Init"))?;
-        vm.eval::<()>(&LUA_PRELUDE, Some("Prelude"))?;
+        let prelude = Asset::get("prelude.lua").unwrap();
+        vm.eval::<()>(&str::from_utf8(&prelude).unwrap(), Some("Prelude"))?;
 
         Result::Ok(LuaActor {
             vm,
@@ -105,9 +58,6 @@ impl LuaActor {
             func_name,
             vec![msg],
         );
-        // `ctx` is used in multiple closure in the lua scope.
-        // to create multiple borrow in closures, we use RefCell to move the borrow-checking to runtime.
-        // Voliating the check will result in panic. Which shouldn't happend(I think) since lua is single-threaded.
         let ctx = RefCell::new(ctx);
         // We can't create a function with references to `self` and is 'static since `self` already owns Lua.
         // A function within Lua owning `self` creates self-borrowing cycle.
@@ -203,7 +153,11 @@ fn invoke(
     func_name: &str,
     args: Vec<LuaMessage>,
 ) -> LuaMessage {
+    // `ctx` is used in multiple closure in the lua scope.
+    // to create multiple borrow in closures, we use RefCell to move the borrow-checking to runtime.
+    // Voliating the check will result in panic. Which shouldn't happend(I think) since lua is single-threaded.
     let ctx = RefCell::new(ctx);
+
     let iter = args.into_iter()
         .map(|msg| msg.to_lua(&vm).unwrap())
         .collect();
