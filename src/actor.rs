@@ -270,6 +270,7 @@ fn invoke(
             })
             .unwrap();
         globals.set("do_send", do_send).unwrap();
+
         let send = scope
             .create_function_mut(
                 |_, (recipient_name, msg, cb_thread_id): (String, LuaMessage, i64)| {
@@ -574,7 +575,40 @@ mod tests {
             local rec = ctx.new_actor("src/test_send.lua", "child")
             ctx.state.rec = rec
             local result = ctx.send(rec, "Hello")
-            assert(result)
+            print("new actor addr name", rec, result)
+            "#,
+            )
+            .on_handle_with_lua(
+                r#"
+            return ctx.msg
+            "#,
+            )
+            .build()
+            .unwrap()
+            .start();
+
+        let delay = Delay::new(Duration::from_secs(1)).map(move |()| {
+            let l = addr.send(LuaMessage::Nil);
+            Arbiter::spawn(l.map(|res| {
+                assert_eq!(res, LuaMessage::Nil);
+                System::current().stop();
+            }).map_err(|e| println!("actor dead {}", e)))
+        });
+        Arbiter::spawn(delay.map_err(|e| println!("actor dead {}", e)));
+
+        system.run();
+    }
+
+    #[test]
+    fn lua_actor_do_send() {
+        let system = System::new("test");
+
+        let addr = LuaActorBuilder::new()
+            .on_started_with_lua(
+                r#"
+            local rec = ctx.new_actor("src/test_send.lua", "child")
+            ctx.state.rec = rec
+            local result = ctx.do_send(rec, "Hello")
             print("new actor addr name", rec, result)
             "#,
             )
