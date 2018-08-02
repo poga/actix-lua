@@ -1,48 +1,52 @@
 __threads = {}
 __thread_id_seq = 0
-__states = {}
+__scripts = {}
+
+ctx = { state = {} }
+
+
+
+function __load(script, name)
+    local f = load(script, name, "bt")
+    __scripts[name] = f
+end
 
 -- create a new coroutine from given script
-function __run(script, msg)
-    -- create a new env
-    local env = {}
-    for k, v in pairs(_G) do
-        env[k] = v
-    end
-    env.thread_id = __thread_id_seq
+function __run(script_name, msg)
+    ctx.thread_id = __thread_id_seq
     __thread_id_seq = __thread_id_seq + 1
 
-    local ctx = {}
     ctx.notify = notify
     ctx.notify_later = notify_later
+    ctx.new_actor = function (path)
+        return __new_actor(path, ctx.thread_id)
+    end
+    -- TODO: implement these as async yield call
     ctx.send = send
     ctx.do_send = do_send
-    ctx.new_actor = new_actor
+
     ctx.msg = msg
-    ctx.state = __states[script]
 
-    env.ctx = ctx
-
-    local f = load(script, name, "bt", env)
-    local thread = coroutine.create(f)
+    local thread = coroutine.create(__scripts[script_name])
 
     local ok, ret = coroutine.resume(thread)
     -- save the thread and its context if the thread yielded
     if coroutine.status(thread) == "suspended" then
-        __threads[env.thread_id] = { thread = thread, ctx = ctx }
+        __threads[env.thread_id] = { thread = thread, msg = msg }
     end
-    if ctx.state ~= nil then
-        __states[script] = ctx.state
-    end
+    ctx.msg = nil
+    ctx.thread_id = nil
     return ret
 end
 
 -- resume a existing coroutine
 function __resume(thread_id, args)
     local thread = __threads[thread_id]
+    ctx.msg = thread.msg
     local ok, ret = coroutine.resume(thread, args)
     if coroutine.status(thread) == "dead" then
         __threads[env.thread_id] = nil
     end
+    ctx.msg = nil
     return ret
 end

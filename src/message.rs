@@ -4,7 +4,6 @@ use rlua::Result as LuaResult;
 use rlua::{FromLua, Lua, ToLua, Value};
 
 use std::collections::HashMap;
-use std::time::Duration;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum LuaMessage {
@@ -123,9 +122,6 @@ impl<'lua> ToLua<'lua> for LuaMessage {
             LuaMessage::Boolean(x) => Ok(Value::Boolean(x)),
             LuaMessage::Nil => Ok(Value::Nil),
             LuaMessage::Table(x) => Ok(Value::Table(lua.create_table_from(x)?)),
-
-            // You should not create other variants from outside of lua
-            _ => unimplemented!(),
         }
     }
 }

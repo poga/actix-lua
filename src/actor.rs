@@ -16,134 +16,175 @@ use message::LuaMessage;
 #[folder = "src/lua/"]
 struct Asset;
 
+pub struct LuaActorBuilder {
+    started: Option<String>,
+    handle: Option<String>,
+    stopped: Option<String>,
+}
+
+impl LuaActorBuilder {
+    pub fn new() -> Self {
+        let noop = Some("return".to_string());
+        LuaActorBuilder {
+            started: noop.clone(),
+            handle: noop.clone(),
+            stopped: noop.clone(),
+        }
+    }
+
+    pub fn on_started(&mut self, filename: &str) -> &mut Self {
+        self.started = Some(read_to_string(filename));
+        self
+    }
+
+    pub fn on_started_with_lua(&mut self, script: &str) -> &mut Self {
+        self.started = Some(script.to_string());
+        self
+    }
+
+    pub fn on_handle(&mut self, filename: &str) -> &mut Self {
+        self.handle = Some(read_to_string(filename));
+        self
+    }
+    pub fn on_handle_with_lua(&mut self, script: &str) -> &mut Self {
+        self.handle = Some(script.to_string());
+        self
+    }
+
+    pub fn on_stopped(&mut self, filename: &str) -> &mut Self {
+        self.stopped = Some(read_to_string(filename));
+        self
+    }
+
+    pub fn on_stopped_with_lua(&mut self, script: &str) -> &mut Self {
+        self.stopped = Some(script.to_string());
+        self
+    }
+
+    pub fn build(&self) -> Result<LuaActor, LuaError> {
+        LuaActor::new(
+            self.started.clone(),
+            self.handle.clone(),
+            self.stopped.clone(),
+        )
+    }
+}
+
+fn read_to_string(filename: &str) -> String {
+    let mut f = File::open(filename).expect("File not found");
+    let mut body = String::new();
+    f.read_to_string(&mut body).expect("Failed to read file");
+
+    body
+}
+
 pub struct LuaActor {
     vm: Lua,
     recipients: HashMap<String, Recipient<LuaMessage>>,
-    handle_script: LuaMessage,
 }
 
 impl LuaActor {
-    pub fn new(script: &str) -> Result<LuaActor, LuaError> {
+    pub fn new(
+        started: Option<String>,
+        handle: Option<String>,
+        stopped: Option<String>,
+    ) -> Result<LuaActor, LuaError> {
         let vm = Lua::new();
         // vm.eval::<()>(&script, Some("Init"))?;
         let prelude = Asset::get("prelude.lua").unwrap();
         vm.eval::<()>(&str::from_utf8(&prelude).unwrap(), Some("Prelude"))?;
+        {
+            let load: Function = vm.globals().get("__load").unwrap();
+            if let Some(script) = started {
+                load.call::<(String, String), ()>((script, "started".to_string()))
+                    .unwrap()
+            }
+            if let Some(script) = handle {
+                load.call::<(String, String), ()>((script, "handle".to_string()))
+                    .unwrap()
+            }
+            if let Some(script) = stopped {
+                load.call::<(String, String), ()>((script, "stopped".to_string()))
+                    .unwrap()
+            }
+        }
 
         Result::Ok(LuaActor {
             vm,
             recipients: HashMap::new(),
-            handle_script: LuaMessage::from(script.to_string()),
         })
     }
 
-    pub fn new_from_file(path: &str) -> Result<LuaActor, LuaError> {
-        let mut f = File::open(path).expect("File not found");
-        let mut body = String::new();
-        f.read_to_string(&mut body).expect("Failed to read file");
+    // fn invoke_in_scope(
+    //     &mut self,
+    //     ctx: &mut Context<Self>,
+    //     func_name: &str,
+    //     msg: LuaMessage,
+    // ) -> <Self as Handler<LuaMessage>>::Result {
+    //     invoke(
+    //         ctx,
+    //         &mut self.vm,
+    //         &mut self.recipients,
+    //         func_name,
+    //         vec![msg],
+    //     );
+    //     let ctx = RefCell::new(ctx);
+    // We can't create a function with references to `self` and is 'static since `self` already owns Lua.
+    // A function within Lua owning `self` creates self-borrowing cycle.
+    // Also, Lua requires all values passed to it is 'static because we can't know when will Lua GC our value.
+    // Therefore, we use scope to make sure the `__rpc` function is temporary and don't have to deal with 'static lifetime.
+    //
+    // (Quote from: https://github.com/kyren/rlua/issues/56#issuecomment-363928738
+    // When the scope ends, the Lua function is 100% guaranteed (afaict!) to be "invalidated".
+    // This means that calling the function will cause an immediate Lua error with a message like "error, call of invalidated function".)
+    //
+    // for reference, check https://github.com/kyren/rlua/issues/73#issuecomment-370222198
+    // self.vm.scope(|scope| {
+    //     let globals = self.vm.globals();
 
-        let actor = LuaActor::new(&body)?;
-        Result::Ok(actor)
-    }
+    //     let notify = scope
+    //         .create_function_mut(|_, msg| {
+    //             let mut ctx = ctx.borrow_mut();
+    //             ctx.notify(msg);
+    //             Ok(())
+    //         })
+    //         .unwrap();
+    //     globals.set("notify", notify).unwrap();
+    //     let notify_later = scope
+    //         .create_function_mut(|_, (msg, secs)| {
+    //             let mut ctx = ctx.borrow_mut();
+    //             ctx.notify_later(msg, Duration::new(secs, 0));
+    //             Ok(())
+    //         })
+    //         .unwrap();
+    //     globals.set("notify_later", notify_later).unwrap();
+    //     let new_actor =
+    //         scope.create_function_mut(|_, (script_path, cb_thread_id): (String, u64)| {
+    //             let recipient_id = Uuid::new_v4();
+    //             let name = format!("LuaActor-{}-{}", recipient_id, &script_path);
 
-    fn invoke_in_scope(
-        &mut self,
-        ctx: &mut Context<Self>,
-        func_name: &str,
-        msg: LuaMessage,
-    ) -> <Self as Handler<LuaMessage>>::Result {
-        invoke(
-            ctx,
-            &mut self.vm,
-            &mut self.recipients,
-            func_name,
-            vec![msg],
-        );
-        let ctx = RefCell::new(ctx);
-        // We can't create a function with references to `self` and is 'static since `self` already owns Lua.
-        // A function within Lua owning `self` creates self-borrowing cycle.
-        // Also, Lua requires all values passed to it is 'static because we can't know when will Lua GC our value.
-        // Therefore, we use scope to make sure the `__rpc` function is temporary and don't have to deal with 'static lifetime.
-        //
-        // (Quote from: https://github.com/kyren/rlua/issues/56#issuecomment-363928738
-        // When the scope ends, the Lua function is 100% guaranteed (afaict!) to be "invalidated".
-        // This means that calling the function will cause an immediate Lua error with a message like "error, call of invalidated function".)
-        //
-        // for reference, check https://github.com/kyren/rlua/issues/73#issuecomment-370222198
-        // self.vm.scope(|scope| {
-        //     let globals = self.vm.globals();
+    //             let addr = LuaActor::new_from_file(&script_path).unwrap().start();
+    //             // TODO: fix this line
+    //             // rec.insert(name.clone(), addr.recipient());
+    //             // can't access self.vm.globals() here, use eval instead
+    //             self.vm
+    //                 .eval::<()>(
+    //                     &format!(r#"__resume({}, "{}")"#, cb_thread_id, name),
+    //                     Some("new_actor_callback"),
+    //                 )
+    //                 .unwrap();
+    //             Ok(())
+    //         });
 
-        //     let notify = scope
-        //         .create_function_mut(|_, msg| {
-        //             let mut ctx = ctx.borrow_mut();
-        //             ctx.notify(msg);
-        //             Ok(())
-        //         })
-        //         .unwrap();
-        //     globals.set("notify", notify).unwrap();
-        //     let notify_later = scope
-        //         .create_function_mut(|_, (msg, secs)| {
-        //             let mut ctx = ctx.borrow_mut();
-        //             ctx.notify_later(msg, Duration::new(secs, 0));
-        //             Ok(())
-        //         })
-        //         .unwrap();
-        //     globals.set("notify_later", notify_later).unwrap();
-        //     let new_actor =
-        //         scope.create_function_mut(|_, (script_path, cb_thread_id): (String, u64)| {
-        //             let recipient_id = Uuid::new_v4();
-        //             let name = format!("LuaActor-{}-{}", recipient_id, &script_path);
-
-        //             let addr = LuaActor::new_from_file(&script_path).unwrap().start();
-        //             // TODO: fix this line
-        //             // rec.insert(name.clone(), addr.recipient());
-        //             // can't access self.vm.globals() here, use eval instead
-        //             self.vm
-        //                 .eval::<()>(
-        //                     &format!(r#"__resume({}, "{}")"#, cb_thread_id, name),
-        //                     Some("new_actor_callback"),
-        //                 )
-        //                 .unwrap();
-        //             Ok(())
-        //         });
-
-        //     let lua_handle: Result<Function, LuaError> = globals.get(func_name);
-        //     if let Ok(f) = lua_handle {
-        //         LuaMessage::from_lua(f.call::<LuaMessage, Value>(arg).unwrap(), &self.vm).unwrap()
-        //     } else {
-        //         LuaMessage::Nil
-        //     }
-        // })
-        LuaMessage::Nil
-    }
-
-    fn invoke_in_scope_2(
-        &mut self,
-        ctx: &mut Context<Self>,
-        func_name: &str,
-        args: (LuaMessage, LuaMessage),
-    ) -> <Self as Handler<LuaMessage>>::Result {
-        self.vm.scope(|scope| {
-            let globals = self.vm.globals();
-
-            let rpc = scope
-                .create_function_mut(|_, msg| {
-                    ctx.notify(msg);
-                    Ok(())
-                })
-                .unwrap();
-            globals.set("__rpc", rpc).unwrap();
-
-            let lua_handle: Result<Function, LuaError> = globals.get(func_name);
-            if let Ok(f) = lua_handle {
-                LuaMessage::from_lua(
-                    f.call::<(LuaMessage, LuaMessage), Value>(args).unwrap(),
-                    &self.vm,
-                ).unwrap()
-            } else {
-                LuaMessage::Nil
-            }
-        })
-    }
+    //     let lua_handle: Result<Function, LuaError> = globals.get(func_name);
+    //     if let Ok(f) = lua_handle {
+    //         LuaMessage::from_lua(f.call::<LuaMessage, Value>(arg).unwrap(), &self.vm).unwrap()
+    //     } else {
+    //         LuaMessage::Nil
+    //     }
+    // })
+    //     LuaMessage::Nil
+    // }
 }
 
 fn invoke(
@@ -196,13 +237,17 @@ fn invoke(
                 let recipient_id = Uuid::new_v4();
                 let name = format!("LuaActor-{}-{}", recipient_id, &script_path);
 
-                let addr = LuaActor::new_from_file(&script_path).unwrap().start();
-                // TODO: fix this line
+                let addr = LuaActorBuilder::new()
+                    .on_handle(&script_path)
+                    .build()
+                    .unwrap()
+                    .start();
+
                 recs.insert(name.clone(), addr.recipient());
                 Ok(name.clone())
             })
             .unwrap();
-        globals.set("new_actor", new_actor).unwrap();
+        globals.set("__new_actor", new_actor).unwrap();
 
         let lua_handle: Result<Function, LuaError> = globals.get(func_name);
         if let Ok(f) = lua_handle {
@@ -218,6 +263,13 @@ impl Actor for LuaActor {
 
     fn started(&mut self, ctx: &mut Context<Self>) {
         // self.invoke_in_scope(ctx, "started", LuaMessage::Nil);
+        invoke(
+            ctx,
+            &mut self.vm,
+            &mut self.recipients,
+            "__run",
+            vec![LuaMessage::from("started")],
+        );
     }
 
     fn stopped(&mut self, ctx: &mut Context<Self>) {
@@ -229,13 +281,12 @@ impl Handler<LuaMessage> for LuaActor {
     type Result = LuaMessage;
 
     fn handle(&mut self, msg: LuaMessage, ctx: &mut Context<Self>) -> Self::Result {
-        let handle_script = self.handle_script.clone();
         invoke(
             ctx,
             &mut self.vm,
             &mut self.recipients,
             "__run",
-            vec![handle_script, msg],
+            vec![LuaMessage::from("handle"), msg],
         )
     }
 }
@@ -248,15 +299,22 @@ mod tests {
     use std::time::Duration;
     use tokio::prelude::Future;
 
+    fn lua_actor_with_handle(script: &str) -> LuaActor {
+        LuaActorBuilder::new()
+            .on_handle_with_lua(script)
+            .build()
+            .unwrap()
+    }
+
     #[test]
     fn lua_actor_basic() {
         let system = System::new("test");
 
-        let lua_addr = LuaActor::new_from_file("./src/test.lua").unwrap().start();
+        let lua_addr = lua_actor_with_handle(r#"return ctx.msg + 1"#).start();
 
-        let l = lua_addr.send(LuaMessage::from(3));
+        let l = lua_addr.send(LuaMessage::from(1));
         Arbiter::spawn(l.map(|res| {
-            assert_eq!(res, LuaMessage::from(423));
+            assert_eq!(res, LuaMessage::from(2));
             System::current().stop();
         }).map_err(|e| println!("actor dead {}", e)));
 
@@ -267,12 +325,11 @@ mod tests {
     fn lua_actor_return_table() {
         let system = System::new("test");
 
-        let lua_addr = LuaActor::new(
+        let lua_addr = lua_actor_with_handle(
             r#"
         return {x = 1}
         "#,
-        ).unwrap()
-            .start();
+        ).start();
 
         let l = lua_addr.send(LuaMessage::from(3));
         Arbiter::spawn(l.map(|res| {
@@ -290,15 +347,14 @@ mod tests {
     fn lua_actor_state() {
         let system = System::new("test");
 
-        let lua_addr = LuaActor::new(
+        let lua_addr = lua_actor_with_handle(
             r#"
-        if not ctx.state then ctx.state = 0 end
+        if not ctx.state.x then ctx.state.x = 0 end
 
-        ctx.state = ctx.state + 1
-        return ctx.state
+        ctx.state.x = ctx.state.x + 1
+        return ctx.state.x
         "#,
-        ).unwrap()
-            .start();
+        ).start();
 
         let l = lua_addr.send(LuaMessage::Nil);
         Arbiter::spawn(l.map(move |res| {
@@ -317,20 +373,24 @@ mod tests {
     fn lua_actor_notify() {
         let system = System::new("test");
 
-        let addr = LuaActor::new(
-            r#"
-        c = 0
-        function started ()
-            notify(100)
-        end
+        let addr = LuaActorBuilder::new()
+            .on_started_with_lua(
+                r#"
+            print("started")
+            ctx.notify(100)
+            "#,
+            )
+            .on_handle_with_lua(
+                r#"
+            if ctx.msg == 100 then
+                ctx.state.notified = ctx.msg
+            end
 
-        function handle(msg)
-            print("handling", msg)
-            c = c + msg
-            return c
-        end
-        "#,
-        ).unwrap()
+            return ctx.msg + ctx.state.notified
+            "#,
+            )
+            .build()
+            .unwrap()
             .start();
 
         let delay = Delay::new(Duration::from_secs(1)).map(move |()| {
@@ -349,22 +409,25 @@ mod tests {
     fn lua_actor_notify_later() {
         let system = System::new("test");
 
-        let addr = LuaActor::new(
-            r#"
-        c = 0
+        let addr = LuaActorBuilder::new()
+            .on_started_with_lua(
+                r#"
+            ctx.notify_later(100, 1)
+            "#,
+            )
+            .on_handle_with_lua(
+                r#"
+            if ctx.msg == 100 then
+                ctx.state.notified = ctx.msg
+            end
 
-        function started()
-            notify_later(100, 1)
-        end
-
-        function handle(msg)
-            print("handling", msg)
-            c = c + msg
-            return c
-        end
-        "#,
-        ).unwrap()
+            return ctx.msg + ctx.state.notified
+            "#,
+            )
+            .build()
+            .unwrap()
             .start();
+
         let delay = Delay::new(Duration::from_secs(2)).map(move |()| {
             let l2 = addr.send(LuaMessage::from(1));
             Arbiter::spawn(l2.map(|res| {
@@ -381,31 +444,22 @@ mod tests {
     fn lua_actor_rpc_new_actor() {
         let system = System::new("test");
 
-        let addr = LuaActor::new(
+        let addr = lua_actor_with_handle(
             r#"
-        function handle(msg)
-            if msg == 0 then
-                return msg + 1
-            end
-            local id = new_actor("child", "src/test.lua")
-            print("resumed", id)
-            -- since this is an async coroutine, return is a no-op.
-            return id
-        end
+        local id = ctx.new_actor("src/test.lua")
+        print("resumed", id)
+        return id
         "#,
-        ).unwrap()
-            .start();
+        ).start();
         let l = addr.send(LuaMessage::Nil);
         Arbiter::spawn(l.map(move |res| {
-            // since the handler yield, we won't get anything in return
-            assert_eq!(res, LuaMessage::Nil);
+            if let LuaMessage::String(s) = res {
+                assert!(s.ends_with("-src/test.lua"));
+            } else {
+                assert!(false);
+            }
 
-            // coroutine should still works normally
-            let l2 = addr.send(LuaMessage::from(0));
-            Arbiter::spawn(l2.map(|res| {
-                assert_eq!(res, LuaMessage::from(1));
-                System::current().stop();
-            }).map_err(|e| println!("actor dead {}", e)));
+            System::current().stop();
         }).map_err(|e| println!("actor dead {}", e)));
 
         system.run();
@@ -415,7 +469,7 @@ mod tests {
     fn lua_actor_do_send() {
         let system = System::new("test");
 
-        let addr = LuaActor::new(
+        let addr = lua_actor_with_handle(
             r#"
         function handle(msg)
             if msg == 0 then
@@ -427,8 +481,7 @@ mod tests {
             return id
         end
         "#,
-        ).unwrap()
-            .start();
+        ).start();
         let l = addr.send(LuaMessage::Nil);
         Arbiter::spawn(l.map(move |res| {
             // since the handler yield, we won't get anything in return
