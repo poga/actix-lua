@@ -274,6 +274,11 @@ fn invoke(
         let send = scope
             .create_function_mut(
                 |_, (recipient_name, msg, cb_thread_id): (String, LuaMessage, i64)| {
+                    // we can't create a lua function which owns `self`
+                    // but `self` is needed for resolving `send` future.
+                    //
+                    // The workaround is we notify ourself with a `SendAttempt` Message
+                    // and resolving `send` future in the `handle` function.
                     self_addr
                         .do_send(SendAttempt {
                             recipient_name: recipient_name,
@@ -301,7 +306,6 @@ impl Actor for LuaActor {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Context<Self>) {
-        // self.invoke_in_scope(ctx, "started", LuaMessage::Nil);
         invoke(
             ctx.address().recipient().clone(),
             ctx,
@@ -313,7 +317,14 @@ impl Actor for LuaActor {
     }
 
     fn stopped(&mut self, ctx: &mut Context<Self>) {
-        // self.invoke_in_scope(ctx, "stopped", LuaMessage::Nil);
+        invoke(
+            ctx.address().recipient().clone(),
+            ctx,
+            &mut self.vm,
+            &mut self.recipients,
+            "__run",
+            vec![LuaMessage::from("stopped")],
+        );
     }
 }
 
@@ -375,7 +386,7 @@ impl Handler<SendAttempt> for LuaActor {
         let self_addr = ctx.address().clone();
         rec.send(attempt.msg.clone())
             .into_actor(self)
-            .then(move |res, act, _| {
+            .then(move |res, _, _| {
                 match res {
                     Ok(msg) => self_addr.do_send(SendAttemptResult {
                         msg: msg,
@@ -601,6 +612,7 @@ mod tests {
 
     #[test]
     fn lua_actor_do_send() {
+        // TODO: we're not really verifying the correctness of `do_send` here
         let system = System::new("test");
 
         let addr = LuaActorBuilder::new()
