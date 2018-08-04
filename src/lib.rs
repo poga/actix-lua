@@ -10,4 +10,5 @@ extern crate rust_embed;
 extern crate futures_timer;
 
 pub mod actor;
+pub mod builder;
 pub mod message;

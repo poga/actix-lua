@@ -4,79 +4,17 @@ use rlua::{FromLua, Function, Lua, MultiValue, ToLua, Value};
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::prelude::*;
 use std::str;
 use std::time::Duration;
 use uuid::Uuid;
 
 use message::LuaMessage;
 
+use builder::LuaActorBuilder;
+
 #[derive(RustEmbed)]
 #[folder = "src/lua/"]
 struct Asset;
-
-pub struct LuaActorBuilder {
-    started: Option<String>,
-    handle: Option<String>,
-    stopped: Option<String>,
-}
-
-impl LuaActorBuilder {
-    pub fn new() -> Self {
-        let noop = Some("return".to_string());
-        LuaActorBuilder {
-            started: noop.clone(),
-            handle: noop.clone(),
-            stopped: noop.clone(),
-        }
-    }
-
-    pub fn on_started(&mut self, filename: &str) -> &mut Self {
-        self.started = Some(read_to_string(filename));
-        self
-    }
-
-    pub fn on_started_with_lua(&mut self, script: &str) -> &mut Self {
-        self.started = Some(script.to_string());
-        self
-    }
-
-    pub fn on_handle(&mut self, filename: &str) -> &mut Self {
-        self.handle = Some(read_to_string(filename));
-        self
-    }
-    pub fn on_handle_with_lua(&mut self, script: &str) -> &mut Self {
-        self.handle = Some(script.to_string());
-        self
-    }
-
-    pub fn on_stopped(&mut self, filename: &str) -> &mut Self {
-        self.stopped = Some(read_to_string(filename));
-        self
-    }
-
-    pub fn on_stopped_with_lua(&mut self, script: &str) -> &mut Self {
-        self.stopped = Some(script.to_string());
-        self
-    }
-
-    pub fn build(&self) -> Result<LuaActor, LuaError> {
-        LuaActor::new(
-            self.started.clone(),
-            self.handle.clone(),
-            self.stopped.clone(),
-        )
-    }
-}
-
-fn read_to_string(filename: &str) -> String {
-    let mut f = File::open(filename).expect("File not found");
-    let mut body = String::new();
-    f.read_to_string(&mut body).expect("Failed to read file");
-
-    body
-}
 
 pub struct LuaActor {
     vm: Lua,
@@ -114,77 +52,6 @@ impl LuaActor {
             recipients: HashMap::new(),
         })
     }
-
-    // fn invoke_in_scope(
-    //     &mut self,
-    //     ctx: &mut Context<Self>,
-    //     func_name: &str,
-    //     msg: LuaMessage,
-    // ) -> <Self as Handler<LuaMessage>>::Result {
-    //     invoke(
-    //         ctx,
-    //         &mut self.vm,
-    //         &mut self.recipients,
-    //         func_name,
-    //         vec![msg],
-    //     );
-    //     let ctx = RefCell::new(ctx);
-    // We can't create a function with references to `self` and is 'static since `self` already owns Lua.
-    // A function within Lua owning `self` creates self-borrowing cycle.
-    // Also, Lua requires all values passed to it is 'static because we can't know when will Lua GC our value.
-    // Therefore, we use scope to make sure the `__rpc` function is temporary and don't have to deal with 'static lifetime.
-    //
-    // (Quote from: https://github.com/kyren/rlua/issues/56#issuecomment-363928738
-    // When the scope ends, the Lua function is 100% guaranteed (afaict!) to be "invalidated".
-    // This means that calling the function will cause an immediate Lua error with a message like "error, call of invalidated function".)
-    //
-    // for reference, check https://github.com/kyren/rlua/issues/73#issuecomment-370222198
-    // self.vm.scope(|scope| {
-    //     let globals = self.vm.globals();
-
-    //     let notify = scope
-    //         .create_function_mut(|_, msg| {
-    //             let mut ctx = ctx.borrow_mut();
-    //             ctx.notify(msg);
-    //             Ok(())
-    //         })
-    //         .unwrap();
-    //     globals.set("notify", notify).unwrap();
-    //     let notify_later = scope
-    //         .create_function_mut(|_, (msg, secs)| {
-    //             let mut ctx = ctx.borrow_mut();
-    //             ctx.notify_later(msg, Duration::new(secs, 0));
-    //             Ok(())
-    //         })
-    //         .unwrap();
-    //     globals.set("notify_later", notify_later).unwrap();
-    //     let new_actor =
-    //         scope.create_function_mut(|_, (script_path, cb_thread_id): (String, u64)| {
-    //             let recipient_id = Uuid::new_v4();
-    //             let name = format!("LuaActor-{}-{}", recipient_id, &script_path);
-
-    //             let addr = LuaActor::new_from_file(&script_path).unwrap().start();
-    //             // TODO: fix this line
-    //             // rec.insert(name.clone(), addr.recipient());
-    //             // can't access self.vm.globals() here, use eval instead
-    //             self.vm
-    //                 .eval::<()>(
-    //                     &format!(r#"__resume({}, "{}")"#, cb_thread_id, name),
-    //                     Some("new_actor_callback"),
-    //                 )
-    //                 .unwrap();
-    //             Ok(())
-    //         });
-
-    //     let lua_handle: Result<Function, LuaError> = globals.get(func_name);
-    //     if let Ok(f) = lua_handle {
-    //         LuaMessage::from_lua(f.call::<LuaMessage, Value>(arg).unwrap(), &self.vm).unwrap()
-    //     } else {
-    //         LuaMessage::Nil
-    //     }
-    // })
-    //     LuaMessage::Nil
-    // }
 }
 
 fn invoke(
@@ -411,6 +278,8 @@ mod tests {
     use std::collections::HashMap;
     use std::time::Duration;
     use tokio::prelude::Future;
+
+    use builder::LuaActorBuilder;
 
     fn lua_actor_with_handle(script: &str) -> LuaActor {
         LuaActorBuilder::new()
