@@ -183,7 +183,6 @@ impl Actor for LuaActor {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Context<Self>) {
-        ctx.terminate();
         invoke(
             ctx.address().recipient().clone(),
             ctx,
