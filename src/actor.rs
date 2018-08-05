@@ -1,4 +1,5 @@
 use actix::prelude::*;
+use actix::ActorContext;
 use rlua::Error as LuaError;
 use rlua::{FromLua, Function, Lua, MultiValue, ToLua, Value};
 
@@ -160,6 +161,15 @@ fn invoke(
             .unwrap();
         globals.set("send", send).unwrap();
 
+        let terminate = scope
+            .create_function_mut(|_, _: LuaMessage| {
+                let mut ctx = ctx.borrow_mut();
+                ctx.terminate();
+                Ok(())
+            })
+            .unwrap();
+        globals.set("terminate", terminate).unwrap();
+
         let lua_handle: Result<Function, LuaError> = globals.get(func_name);
         if let Ok(f) = lua_handle {
             LuaMessage::from_lua(f.call::<MultiValue, Value>(args).unwrap(), &vm).unwrap()
@@ -173,6 +183,7 @@ impl Actor for LuaActor {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Context<Self>) {
+        ctx.terminate();
         invoke(
             ctx.address().recipient().clone(),
             ctx,
@@ -508,6 +519,29 @@ mod tests {
                 assert_eq!(res, LuaMessage::Nil);
                 System::current().stop();
             }).map_err(|e| println!("actor dead {}", e)))
+        });
+        Arbiter::spawn(delay.map_err(|e| println!("actor dead {}", e)));
+
+        system.run();
+    }
+
+    #[test]
+    fn lua_actor_terminate() {
+        // TODO: validate on_stopped is called
+        let system = System::new("test");
+
+        let addr = LuaActorBuilder::new()
+            .on_started_with_lua(
+                r#"
+            ctx.terminate()
+            "#,
+            )
+            .on_stopped_with_lua(r#"print("stopped")"#)
+            .build()
+            .unwrap()
+            .start();
+        let delay = Delay::new(Duration::from_secs(1)).map(move |()| {
+            System::current().stop();
         });
         Arbiter::spawn(delay.map_err(|e| println!("actor dead {}", e)));
 

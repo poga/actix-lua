@@ -27,6 +27,7 @@ function __run(script_name, msg)
         return coroutine.yield()
     end
     ctx.do_send = do_send
+    ctx.terminate = terminate
 
     ctx.msg = msg
 
