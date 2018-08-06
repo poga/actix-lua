@@ -529,7 +529,7 @@ mod tests {
         // TODO: validate on_stopped is called
         let system = System::new("test");
 
-        let addr = LuaActorBuilder::new()
+        let _ = LuaActorBuilder::new()
             .on_started_with_lua(
                 r#"
             ctx.terminate()
