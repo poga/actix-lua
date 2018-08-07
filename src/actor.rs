@@ -437,14 +437,14 @@ mod tests {
 
         let addr = lua_actor_with_handle(
             r#"
-        local id = ctx.new_actor("src/test.lua")
+        local id = ctx.new_actor("src/lua/test.lua")
         return id
         "#,
         ).start();
         let l = addr.send(LuaMessage::Nil);
         Arbiter::spawn(l.map(move |res| {
             if let LuaMessage::String(s) = res {
-                assert!(s.ends_with("-src/test.lua"));
+                assert!(s.ends_with("-src/lua/test.lua"));
             } else {
                 assert!(false);
             }
@@ -462,7 +462,7 @@ mod tests {
         let addr = LuaActorBuilder::new()
             .on_started_with_lua(
                 r#"
-            local rec = ctx.new_actor("src/test_send.lua", "child")
+            local rec = ctx.new_actor("src/lua/test_send.lua", "child")
             ctx.state.rec = rec
             local result = ctx.send(rec, "Hello")
             print("new actor addr name", rec, result)
@@ -497,7 +497,7 @@ mod tests {
         let addr = LuaActorBuilder::new()
             .on_started_with_lua(
                 r#"
-            local rec = ctx.new_actor("src/test_send.lua", "child")
+            local rec = ctx.new_actor("src/lua/test_send.lua", "child")
             ctx.state.rec = rec
             local result = ctx.do_send(rec, "Hello")
             print("new actor addr name", rec, result)
