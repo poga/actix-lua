@@ -10,24 +10,22 @@ Add `actix-lua` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-actix-lua = "0.1"
+actix-lua = "0.2"
 ```
 
-#### Implement an Actor in Lua
-
-You can handle messages by defining a `handle` function in Lua. For example:
+#### Build a Lua Actor
 
 ```rust
 extern crate actix_lua;
-use actix_lua::{LuaActor, LuaMessage};
+use actix_lua::{LuaActorBuilder, LuaMessage};
 
 fn main () {
     let system = System::new("test");
-    let addr = LuaActor::new(r#"
-      function handle(msg)
-        return msg + 42
-      end
-    "#).unwrap().start();
+    let addr = LuaActorBuilder::new()
+        .on_handle_with_lua(r#"return ctx.msg + 42"#)
+        .build()
+        .unwrap()
+        .start()
 
     let res = add.send(LuaMessage:from(100));
     // return: 142
@@ -36,21 +34,43 @@ fn main () {
 
 ## Messages
 
-Since Lua is a dynamic typed language. We use one message type `LuaMessage` to represent all kind of types of a message Lua can send/receive.
+Lua is a dynamic typed language. We use one message type `LuaMessage` to represent all kind of types of a message Lua can send/receive.
 
 You can convert most of the primitive types to `LuaMessage` with `LuaMessage::from()`.
 
 ## Lua API
 
-The following function is available in the Lua script:
+#### `ctx.msg`
 
-#### `notify(msg)`
+The message sent to Lua actor.
+
+#### `ctx.notify(msg)`
 
 Send message `msg` to self.
 
-#### `notify_later(msg, seconds)`
+#### `ctx.notify_later(msg, seconds)`
 
 Send message `msg` to self after specified period of time.
+
+#### `local recipient = ctx.new_actor(script_path, [actor_name])`
+
+Create a new actor with given lua script. returns a recipient which can be used in `ctx.send` and `ctx.do_send`.
+
+#### `local result = ctx.send(recipient, msg)`
+
+Send message `msg` to `recipient asynchronously and wait for response.
+
+Equivalent to `actix::Recipient.send`.
+
+#### `ctx.do_send(recipient, msg)`
+
+Send message `msg` to `recipient`.
+
+Equivalent to `actix::Recipient.do_send`.
+
+#### `ctx.terminate()`
+
+Terminate actor execution.
 
 ## License
 
