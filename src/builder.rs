@@ -10,14 +10,20 @@ pub struct LuaActorBuilder {
     stopped: Option<String>,
 }
 
-impl LuaActorBuilder {
-    pub fn new() -> Self {
+impl Default for LuaActorBuilder {
+    fn default() -> LuaActorBuilder {
         let noop = Some("return".to_string());
         LuaActorBuilder {
             started: noop.clone(),
             handle: noop.clone(),
             stopped: noop.clone(),
         }
+    }
+}
+
+impl LuaActorBuilder {
+    pub fn new() -> Self {
+        LuaActorBuilder::default()
     }
 
     pub fn on_started(&mut self, filename: &str) -> &mut Self {

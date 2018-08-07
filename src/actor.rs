@@ -56,7 +56,7 @@ impl LuaActor {
 }
 
 fn invoke(
-    self_addr: Recipient<SendAttempt>,
+    self_addr: &Recipient<SendAttempt>,
     ctx: &mut Context<LuaActor>,
     vm: &mut Lua,
     recs: &mut HashMap<String, Recipient<LuaMessage>>,
@@ -149,9 +149,9 @@ fn invoke(
                     // and resolving `send` future in the `handle` function.
                     self_addr
                         .do_send(SendAttempt {
-                            recipient_name: recipient_name,
-                            msg: msg,
-                            cb_thread_id: cb_thread_id,
+                            recipient_name,
+                            msg,
+                            cb_thread_id,
                         })
                         .unwrap();
 
@@ -184,7 +184,7 @@ impl Actor for LuaActor {
 
     fn started(&mut self, ctx: &mut Context<Self>) {
         invoke(
-            ctx.address().recipient().clone(),
+            &ctx.address().recipient(),
             ctx,
             &mut self.vm,
             &mut self.recipients,
@@ -195,7 +195,7 @@ impl Actor for LuaActor {
 
     fn stopped(&mut self, ctx: &mut Context<Self>) {
         invoke(
-            ctx.address().recipient().clone(),
+            &ctx.address().recipient(),
             ctx,
             &mut self.vm,
             &mut self.recipients,
@@ -229,7 +229,7 @@ impl Handler<LuaMessage> for LuaActor {
 
     fn handle(&mut self, msg: LuaMessage, ctx: &mut Context<Self>) -> Self::Result {
         invoke(
-            ctx.address().recipient().clone(),
+            &ctx.address().recipient(),
             ctx,
             &mut self.vm,
             &mut self.recipients,
@@ -245,7 +245,7 @@ impl Handler<SendAttemptResult> for LuaActor {
     fn handle(&mut self, result: SendAttemptResult, ctx: &mut Context<Self>) -> Self::Result {
         println!("send attemplt result {:?}", result.msg);
         invoke(
-            ctx.address().recipient().clone(),
+            &ctx.address().recipient(),
             ctx,
             &mut self.vm,
             &mut self.recipients,
@@ -259,14 +259,14 @@ impl Handler<SendAttempt> for LuaActor {
     type Result = LuaMessage;
 
     fn handle(&mut self, attempt: SendAttempt, ctx: &mut Context<Self>) -> Self::Result {
-        let rec = self.recipients.get(&attempt.recipient_name).unwrap();
+        let rec = &self.recipients[&attempt.recipient_name];
         let self_addr = ctx.address().clone();
         rec.send(attempt.msg.clone())
             .into_actor(self)
             .then(move |res, _, _| {
                 match res {
                     Ok(msg) => self_addr.do_send(SendAttemptResult {
-                        msg: msg,
+                        msg,
                         cb_thread_id: attempt.cb_thread_id,
                     }),
                     _ => {
