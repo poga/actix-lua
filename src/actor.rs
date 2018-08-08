@@ -17,6 +17,35 @@ use builder::LuaActorBuilder;
 #[folder = "src/lua/"]
 struct Asset;
 
+/// Top level struct which holds a lua state for itself.
+///
+/// `LuaActor` exposed most of the actix context API to the lua enviroment.
+///
+///
+/// ### `ctx.msg`
+/// The message sent to Lua actor.
+///
+/// ### `ctx.notify(msg)`
+/// Send message `msg` to self.
+///
+/// ### `ctx.notify_later(msg, seconds)`
+/// Send message `msg` to self after specified period of time.
+///
+/// ### `local recipient = ctx.new_actor(script_path, [actor_name])`
+/// Create a new actor with given lua script. returns a recipient which can be used in `ctx.send` and `ctx.do_send`.
+///
+/// ### `local result = ctx.send(recipient, msg)`
+/// Send message `msg` to `recipient asynchronously and wait for response.
+///
+/// Equivalent to `actix::Recipient.send`.
+///
+/// ### `ctx.do_send(recipient, msg)`
+/// Send message `msg` to `recipient`.
+///
+/// Equivalent to `actix::Recipient.do_send`.
+///
+/// ### `ctx.terminate()`
+/// Terminate actor execution.
 pub struct LuaActor {
     vm: Lua,
     pub recipients: HashMap<String, Recipient<LuaMessage>>,
@@ -52,6 +81,16 @@ impl LuaActor {
             vm,
             recipients: HashMap::new(),
         })
+    }
+
+    /// Add a recipient to the actor's recipient list.
+    /// You can send message to the recipient via `name` with the context API `ctx.send(name, message)`
+    pub fn add_recipients(
+        &mut self,
+        name: &str,
+        rec: Recipient<LuaMessage>,
+    ) -> Option<Recipient<LuaMessage>> {
+        self.recipients.insert(name.to_string(), rec)
     }
 }
 

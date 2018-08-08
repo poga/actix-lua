@@ -2,18 +2,9 @@
 
 [![](http://meritbadge.herokuapp.com/actix-lua)](https://crates.io/crates/actix-lua)
 
-[Lua](https://www.lua.org/) scripting for [actix](https://github.com/actix/actix) actors.
+A safe scripting environment for [actix](https://github.com/actix/actix) with the [Lua Programming Language](https;//www.lua.org).
 
-## Usage
-
-Add `actix-lua` to your `Cargo.toml`:
-
-```toml
-[dependencies]
-actix-lua = "0.2"
-```
-
-#### Hello World
+## Synopsis
 
 ```rust
 extern crate actix_lua;
@@ -24,14 +15,23 @@ fn main () {
         .on_handle_with_lua(r#"return ctx.msg + 42"#)
         .build()
         .unwrap()
-        .start()
+        .start();
 
     let res = add.send(LuaMessage:from(100));
     // return: 142
 }
 ```
 
-## Messages
+## Install
+
+Add `actix-lua` to your `Cargo.toml`:
+
+```toml
+[dependencies]
+actix-lua = "0.2"
+```
+
+## Message
 
 Lua is a dynamic typed language. We use one message type `LuaMessage` to represent all kind of types of a message Lua can send/receive.
 
