@@ -1,5 +1,6 @@
 # actix-lua
 
+[![Build Status](https://travis-ci.org/poga/actix-lua.svg?branch=master)](https://travis-ci.org/poga/actix-lua)
 [![](http://meritbadge.herokuapp.com/actix-lua)](https://crates.io/crates/actix-lua)
 
 A safe scripting environment for [actix](https://github.com/actix/actix) with the [Lua Programming Language](https;//www.lua.org).
