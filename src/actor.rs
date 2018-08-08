@@ -13,10 +13,6 @@ use message::LuaMessage;
 
 use builder::LuaActorBuilder;
 
-#[derive(RustEmbed)]
-#[folder = "src/lua/"]
-struct Asset;
-
 /// Top level struct which holds a lua state for itself.
 ///
 /// `LuaActor` exposed most of the actix context API to the lua enviroment.
@@ -58,9 +54,8 @@ impl LuaActor {
         stopped: Option<String>,
     ) -> Result<LuaActor, LuaError> {
         let vm = Lua::new();
-        // vm.eval::<()>(&script, Some("Init"))?;
-        let prelude = Asset::get("prelude.lua").unwrap();
-        vm.eval::<()>(&str::from_utf8(&prelude).unwrap(), Some("Prelude"))?;
+        let prelude = include_str!("lua/prelude.lua");
+        vm.eval::<()>(prelude, Some("Prelude"))?;
         {
             let load: Function = vm.globals().get("__load").unwrap();
             if let Some(script) = started {

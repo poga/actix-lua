@@ -1,6 +1,6 @@
 [package]
 name = "actix-lua"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Poga Po <poga.bahamut@gmail.com>"]
 description = "Define Actix actor with Lua"
 repository = "https://github.com/poga/actix-lua"
@@ -21,7 +21,6 @@ futures = "0.1"
 tokio = "0.1"
 rlua = "0.14"
 uuid = { version = "0.6", features = ["v4"] }
-rust-embed = "3.0"
 
 [dev-dependencies]
 futures-timer = "0.1"
