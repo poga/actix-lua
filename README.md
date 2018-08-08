@@ -29,7 +29,7 @@ Add `actix-lua` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-actix-lua = "0.2"
+actix-lua = "0.3"
 ```
 
 ## Message
