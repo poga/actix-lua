@@ -2,7 +2,7 @@
 name = "actix-lua"
 version = "0.3.0"
 authors = ["Poga Po <poga.bahamut@gmail.com>"]
-description = "Define Actix actor with Lua"
+description = "A safe scripting environment for actix with the Lua Programming Language"
 repository = "https://github.com/poga/actix-lua"
 readme = "./README.md"
 keywords = ["actix", "actor", "lua"]
