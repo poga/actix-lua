@@ -16,7 +16,6 @@ struct AppState {
 }
 
 fn index((name, state): (Path<String>, State<AppState>)) -> FutureResponse<HttpResponse> {
-    // send async `CreateUser` message to a `DbExecutor`
     state
         .lua
         .send(LuaMessage::from(name.into_inner()))
