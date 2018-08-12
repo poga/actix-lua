@@ -4,7 +4,7 @@
 [![Latest Version](https://img.shields.io/crates/v/actix-lua.svg)](https://crates.io/crates/actix-lua)
 [![API Documentation](https://docs.rs/actix-lua/badge.svg)](https://docs.rs/actix-lua)
 
-A safe scripting environment for [actix](https://github.com/actix/actix) with the [Lua Programming Language](https;//www.lua.org).
+A safe scripting environment for [actix](https://github.com/actix/actix) with the [Lua Programming Language](https://www.lua.org).
 
 ## Synopsis
 
