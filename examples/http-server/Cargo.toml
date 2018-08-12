@@ -1,0 +1,12 @@
+[package]
+name = "http-server"
+version = "0.1.0"
+authors = ["Poga Po <poga.bahamut@gmail.com>"]
+
+[dependencies]
+actix = "*"
+actix-web = "*"
+env_logger = "*"
+futures = "*"
+
+actix-lua = { path = "../.." }
