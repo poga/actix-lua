@@ -580,4 +580,30 @@ mod tests {
 
         system.run();
     }
+
+    use std::env;
+
+    #[test]
+    fn lua_actor_require() {
+        let system = System::new("test");
+        env::set_var("LUA_PATH", "./src/?.lua;;");
+
+        let addr = LuaActorBuilder::new()
+            .on_handle_with_lua(
+                r#"
+                local m = require('lua/module')
+                return m.incr(ctx.msg)
+            "#,
+            )
+            .build()
+            .unwrap()
+            .start();
+        let l = addr.send(LuaMessage::from(1));
+        Arbiter::spawn(l.map(|res| {
+            assert_eq!(res, LuaMessage::from(2));
+            System::current().stop();
+        }).map_err(|e| println!("actor dead {}", e)));
+
+        system.run();
+    }
 }
