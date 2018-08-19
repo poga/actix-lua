@@ -45,7 +45,6 @@ end
 
 -- resume a existing coroutine
 function __resume(thread_id, args)
-    print("__resume", thread_id, args)
     local thread = __threads[thread_id]
     ctx.thread_id = thread_id
     ctx.msg = thread.msg
