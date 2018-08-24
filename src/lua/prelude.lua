@@ -1,4 +1,5 @@
 __threads = {}
+__thread_id_seq = 0
 __scripts = {}
 
 ctx = { state = {} }
@@ -13,7 +14,8 @@ end
 
 -- create a new coroutine from given script
 function __run(script_name, msg, thread_id)
-    ctx.thread_id = thread_id
+    ctx.thread_id = __thread_id_seq
+    __thread_id_seq = __thread_id_seq + 1
 
     ctx.notify = notify
     ctx.notify_later = notify_later

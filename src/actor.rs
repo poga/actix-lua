@@ -176,7 +176,7 @@ fn invoke(
 
         let send = scope
             .create_function_mut(
-                |_, (recipient_name, msg, cb_thread_id): (String, LuaMessage, String)| {
+                |_, (recipient_name, msg, cb_thread_id): (String, LuaMessage, i64)| {
                     // we can't create a lua function which owns `self`
                     // but `self` is needed for resolving `send` future.
                     //
@@ -224,11 +224,7 @@ impl Actor for LuaActor {
             &mut self.vm,
             &mut self.recipients,
             "__run",
-            vec![
-                LuaMessage::from("started"),
-                LuaMessage::Nil,
-                LuaMessage::from(Uuid::new_v4().to_string()),
-            ],
+            vec![LuaMessage::from("started")],
         );
     }
 
@@ -239,11 +235,7 @@ impl Actor for LuaActor {
             &mut self.vm,
             &mut self.recipients,
             "__run",
-            vec![
-                LuaMessage::from("stopped"),
-                LuaMessage::Nil,
-                LuaMessage::from(Uuid::new_v4().to_string()),
-            ],
+            vec![LuaMessage::from("stopped")],
         );
     }
 }
@@ -251,7 +243,7 @@ impl Actor for LuaActor {
 struct SendAttempt {
     recipient_name: String,
     msg: LuaMessage,
-    cb_thread_id: String,
+    cb_thread_id: i64,
 }
 
 impl Message for SendAttempt {
@@ -260,7 +252,7 @@ impl Message for SendAttempt {
 
 struct SendAttemptResult {
     msg: LuaMessage,
-    cb_thread_id: String,
+    cb_thread_id: i64,
 }
 
 impl Message for SendAttemptResult {
@@ -277,11 +269,7 @@ impl Handler<LuaMessage> for LuaActor {
             &mut self.vm,
             &mut self.recipients,
             "__run",
-            vec![
-                LuaMessage::from("handle"),
-                msg,
-                LuaMessage::from(Uuid::new_v4().to_string()),
-            ],
+            vec![LuaMessage::from("handle"), msg],
         )
     }
 }
@@ -343,6 +331,58 @@ mod tests {
             .build()
             .unwrap()
     }
+
+    // #[test]
+    // fn fff() {
+    //     let system = System::new("test");
+
+    //     #[derive(Debug)]
+    //     struct Client {
+    //         ping_count: u8,
+    //     }
+
+    //     impl Client {
+    //         fn new() -> Self {
+    //             Client { ping_count: 0 }
+    //         }
+
+    //         fn send_ping(self) -> FutureResult<Self, ()> {
+    //             println!("ping");
+    //             ok(Client {
+    //                 ping_count: self.ping_count + 1,
+    //             })
+    //         }
+
+    //         fn receive_pong(self) -> FutureResult<(Self, bool), ()> {
+    //             let done = self.ping_count >= 5;
+    //             ok((self, done))
+    //         }
+    //     }
+
+    //     let ping_til_done = loop_fn(Client::new(), |client| {
+    //         client
+    //             .send_ping()
+    //             .and_then(|client| client.receive_pong())
+    //             .and_then(|(client, done)| {
+    //                 if done {
+    //                     Ok(Loop::Break(client))
+    //                 } else {
+    //                     Ok(Loop::Continue(client))
+    //                 }
+    //             })
+    //     });
+
+    //     Arbiter::spawn(
+    //         ping_til_done
+    //             .map(|cli| {
+    //                 println!("{:?}", cli);
+    //                 System::current().stop();
+    //             })
+    //             .map_err(|e| println!("actor dead {:?}", e)),
+    //     );
+
+    //     system.run();
+    // }
 
     #[test]
     fn lua_actor_basic() {
