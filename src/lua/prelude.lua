@@ -1,5 +1,4 @@
 __threads = {}
-__thread_id_seq = 0
 __scripts = {}
 
 ctx = { state = {} }
@@ -13,18 +12,17 @@ function __load(script, name)
 end
 
 -- create a new coroutine from given script
-function __run(script_name, msg)
-    ctx.thread_id = __thread_id_seq
-    __thread_id_seq = __thread_id_seq + 1
+function __run(script_name, msg, thread_id)
+    ctx.thread_id = thread_id
 
     ctx.notify = notify
     ctx.notify_later = notify_later
     ctx.new_actor = function (path)
-        return __new_actor(path, ctx.thread_id)
+        return __new_actor(path)
     end
     ctx.send = function (recipient_name, msg)
         send(recipient_name, msg, ctx.thread_id)
-        return coroutine.yield()
+        return coroutine.yield("__suspended__" .. ctx.thread_id)
     end
     ctx.do_send = do_send
     ctx.terminate = terminate

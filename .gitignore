@@ -1,6 +1,5 @@
-/target
+target
 **/*.rs.bk
 Cargo.lock
 .idea
 actix-lua.iml
-examples/http-server/target

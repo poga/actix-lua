@@ -89,6 +89,7 @@ impl LuaActor {
     }
 }
 
+// Remove all `self` usage with a independent function `invoke`.
 fn invoke(
     self_addr: &Recipient<SendAttempt>,
     ctx: &mut Context<LuaActor>,
@@ -175,7 +176,7 @@ fn invoke(
 
         let send = scope
             .create_function_mut(
-                |_, (recipient_name, msg, cb_thread_id): (String, LuaMessage, i64)| {
+                |_, (recipient_name, msg, cb_thread_id): (String, LuaMessage, String)| {
                     // we can't create a lua function which owns `self`
                     // but `self` is needed for resolving `send` future.
                     //
@@ -223,7 +224,11 @@ impl Actor for LuaActor {
             &mut self.vm,
             &mut self.recipients,
             "__run",
-            vec![LuaMessage::from("started")],
+            vec![
+                LuaMessage::from("started"),
+                LuaMessage::Nil,
+                LuaMessage::from(Uuid::new_v4().to_string()),
+            ],
         );
     }
 
@@ -234,7 +239,11 @@ impl Actor for LuaActor {
             &mut self.vm,
             &mut self.recipients,
             "__run",
-            vec![LuaMessage::from("stopped")],
+            vec![
+                LuaMessage::from("stopped"),
+                LuaMessage::Nil,
+                LuaMessage::from(Uuid::new_v4().to_string()),
+            ],
         );
     }
 }
@@ -242,7 +251,7 @@ impl Actor for LuaActor {
 struct SendAttempt {
     recipient_name: String,
     msg: LuaMessage,
-    cb_thread_id: i64,
+    cb_thread_id: String,
 }
 
 impl Message for SendAttempt {
@@ -251,7 +260,7 @@ impl Message for SendAttempt {
 
 struct SendAttemptResult {
     msg: LuaMessage,
-    cb_thread_id: i64,
+    cb_thread_id: String,
 }
 
 impl Message for SendAttemptResult {
@@ -268,7 +277,11 @@ impl Handler<LuaMessage> for LuaActor {
             &mut self.vm,
             &mut self.recipients,
             "__run",
-            vec![LuaMessage::from("handle"), msg],
+            vec![
+                LuaMessage::from("handle"),
+                msg,
+                LuaMessage::from(Uuid::new_v4().to_string()),
+            ],
         )
     }
 }
@@ -303,7 +316,7 @@ impl Handler<SendAttempt> for LuaActor {
                         cb_thread_id: attempt.cb_thread_id,
                     }),
                     _ => {
-                        println!("send attempt failed");
+                        panic!("send attempt failed {:?}", res);
                     }
                 };
                 actix::fut::ok(())
@@ -477,6 +490,7 @@ mod tests {
         let l = addr.send(LuaMessage::Nil);
         Arbiter::spawn(l.map(move |res| {
             if let LuaMessage::String(s) = res {
+                println!("{}", s);
                 assert!(s.ends_with("-src/lua/test/test.lua"));
             } else {
                 assert!(false);
