@@ -537,6 +537,37 @@ mod tests {
     }
 
     #[test]
+    fn lua_actor_thread_yield() {
+        let system = System::new("test");
+
+        let actor = LuaActorBuilder::new()
+            .on_handle_with_lua(
+                r#"
+            local rec = ctx.new_actor("src/lua/test/test_send_result.lua", "child")
+            ctx.state.rec = rec
+            local result = ctx.send(rec, "Hello")
+            print(result)
+            return result
+            "#,
+            )
+            .build()
+            .unwrap();
+
+        let addr = actor.start();
+
+        let l = addr.send(LuaMessage::Nil);
+        Arbiter::spawn(l.map(move |res| {
+            if let LuaMessage::ThreadYield(_) = res {
+                System::current().stop();
+            } else {
+                unimplemented!()
+            }
+        }).map_err(|e| println!("actor dead {}", e)));
+
+        system.run();
+    }
+
+    #[test]
     fn lua_actor_do_send() {
         // TODO: we're not really verifying the correctness of `do_send` here
         let system = System::new("test");
