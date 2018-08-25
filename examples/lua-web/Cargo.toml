@@ -1,0 +1,12 @@
+[package]
+name = "lua-web"
+version = "0.1.0"
+authors = ["Poga Po <poga.bahamut@gmail.com>"]
+
+[dependencies]
+actix = "0.7.3"
+actix-web = "0.7.4"
+env_logger = "0.5.12"
+futures = "0.1.23"
+
+actix-lua = { path = "../.." }
