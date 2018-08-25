@@ -6,19 +6,17 @@ local file = io.open("./templates/index.tmpl", "r")
 local content = file:read("*a")
 local tmpl = liluat.compile(content)
 
-local ret
-
 r:match('GET', '/hello', function (params)
-  local html = liluat.render(tmpl, {title="hello world", verb="Hello "})
-
-  ret = html
+  return liluat.render(tmpl, {title="hello world", verb="Hello "})
 end)
 
 r:match('POST', '/form', function (params)
-  ret = "submitted"
+  return "submitted"
 end)
 
-if not r:execute(ctx.msg.method, '/' .. ctx.msg.path) then
+local ok, ret = r:execute(ctx.msg.method, '/' .. ctx.msg.path)
+
+if not ok then
   -- TODO: set status code
   ret = "404 not found"
 end
