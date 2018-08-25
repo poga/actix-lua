@@ -8,19 +8,20 @@ local tmpl = liluat.compile(content)
 
 local ret
 
-print(ctx.msg)
-
 r:match('GET', '/hello', function (params)
-  print("get!!!")
-
   local html = liluat.render(tmpl, {title="hello world", verb="Hello "})
-
-  print(html)
 
   ret = html
 end)
 
-r:execute(ctx.msg.method, '/' .. ctx.msg.path)
+r:match('POST', '/form', function (params)
+  ret = "submitted"
+end)
+
+if not r:execute(ctx.msg.method, '/' .. ctx.msg.path) then
+  -- TODO: set status code
+  ret = "404 not found"
+end
 
 return ret
 

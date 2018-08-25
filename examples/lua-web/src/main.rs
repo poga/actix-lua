@@ -18,11 +18,15 @@ struct AppState {
     lua: Addr<LuaActor>,
 }
 
-fn get((path, state): (Path<String>, State<AppState>)) -> FutureResponse<HttpResponse> {
+fn build_message(path: Path<String>, method: &str) -> LuaMessage {
     let mut t = HashMap::new();
     t.insert("path".to_string(), LuaMessage::from(path.into_inner()));
-    t.insert("method".to_string(), LuaMessage::from("GET"));
+    t.insert("method".to_string(), LuaMessage::from(method.to_string()));
 
+    LuaMessage::from(t)
+}
+
+fn run_lua(state: State<AppState>, t: LuaMessage) -> FutureResponse<HttpResponse> {
     state
         .lua
         .send(LuaMessage::from(t))
@@ -36,6 +40,22 @@ fn get((path, state): (Path<String>, State<AppState>)) -> FutureResponse<HttpRes
             }
         })
         .responder()
+}
+
+fn get((path, state): (Path<String>, State<AppState>)) -> FutureResponse<HttpResponse> {
+    run_lua(state, build_message(path, "GET"))
+}
+
+fn post((path, state): (Path<String>, State<AppState>)) -> FutureResponse<HttpResponse> {
+    run_lua(state, build_message(path, "POST"))
+}
+
+fn put((path, state): (Path<String>, State<AppState>)) -> FutureResponse<HttpResponse> {
+    run_lua(state, build_message(path, "PUT"))
+}
+
+fn delete((path, state): (Path<String>, State<AppState>)) -> FutureResponse<HttpResponse> {
+    run_lua(state, build_message(path, "DELETE"))
 }
 
 fn main() {
@@ -59,7 +79,12 @@ fn main() {
         App::with_state(AppState{lua: addr.clone()})
             // enable logger
             .middleware(middleware::Logger::default())
-            .resource("/{path:.*}", |r| r.method(http::Method::GET).with(get))
+            .resource("/{path:.*}", |r| {
+                r.method(http::Method::GET).with(get);
+                r.method(http::Method::POST).with(post);
+                r.method(http::Method::PUT).with(put);
+                r.method(http::Method::DELETE).with(delete)
+            })
     }).bind("127.0.0.1:8080")
         .unwrap()
         .start();
