@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use message::LuaMessage;
 
-use builder::LuaActorBuilder;
+use builder::{LuaActorBuilder, WithVmCallback};
 
 /// Top level struct which holds a lua state for itself.
 ///
@@ -52,8 +52,14 @@ impl LuaActor {
         started: Option<String>,
         handle: Option<String>,
         stopped: Option<String>,
+        vm_callback: Option<Box<WithVmCallback>>
     ) -> Result<LuaActor, LuaError> {
         let vm = Lua::new();
+
+        if let Some(vm_callback) = vm_callback {
+            vm_callback(&vm)?;
+        }
+
         let prelude = include_str!("lua/prelude.lua");
         vm.eval::<()>(prelude, Some("Prelude"))?;
         {
