@@ -611,4 +611,37 @@ mod tests {
 
         system.run();
     }
+
+    #[test]
+    fn lua_actor_with_vm() {
+        let system = System::new("test");
+
+        let addr = LuaActorBuilder::new()
+            .on_handle_with_lua(
+                r#"
+            return greet(ctx.msg)
+            "#,
+            )
+            .with_vm(move |vm| {
+                let greet = vm.create_function(|_, name: String| {
+                    Ok(format!("Hello, {}!", name))
+                })?;
+
+                vm.globals().set("greet", greet)?;
+
+                Ok(())
+            })
+            .build()
+            .unwrap()
+            .start();
+
+
+        let l = addr.send(LuaMessage::from("World"));
+        Arbiter::spawn(l.map(|res| {
+            assert_eq!(res, LuaMessage::from("Hello, World!"));
+            System::current().stop();
+        }).map_err(|e| println!("actor dead {}", e)));
+
+        system.run();
+    }
 }
