@@ -33,6 +33,7 @@
 //! [`LuaActorBuilder`]: struct.LuaActorBuilder.html
 //! [`LuaMessage`]: enum.LuaMessage.html
 extern crate actix;
+extern crate regex;
 extern crate rlua;
 extern crate tokio;
 extern crate uuid;

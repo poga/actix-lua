@@ -95,6 +95,7 @@ impl LuaActor {
     }
 }
 
+// Remove all `self` usage with a independent function `invoke`.
 fn invoke(
     self_addr: &Recipient<SendAttempt>,
     ctx: &mut Context<LuaActor>,
@@ -310,7 +311,7 @@ impl Handler<SendAttempt> for LuaActor {
                         cb_thread_id: attempt.cb_thread_id,
                     }),
                     _ => {
-                        println!("send attempt failed");
+                        panic!("send attempt failed {:?}", res);
                     }
                 };
                 actix::fut::ok(())
@@ -337,6 +338,58 @@ mod tests {
             .build()
             .unwrap()
     }
+
+    // #[test]
+    // fn fff() {
+    //     let system = System::new("test");
+
+    //     #[derive(Debug)]
+    //     struct Client {
+    //         ping_count: u8,
+    //     }
+
+    //     impl Client {
+    //         fn new() -> Self {
+    //             Client { ping_count: 0 }
+    //         }
+
+    //         fn send_ping(self) -> FutureResult<Self, ()> {
+    //             println!("ping");
+    //             ok(Client {
+    //                 ping_count: self.ping_count + 1,
+    //             })
+    //         }
+
+    //         fn receive_pong(self) -> FutureResult<(Self, bool), ()> {
+    //             let done = self.ping_count >= 5;
+    //             ok((self, done))
+    //         }
+    //     }
+
+    //     let ping_til_done = loop_fn(Client::new(), |client| {
+    //         client
+    //             .send_ping()
+    //             .and_then(|client| client.receive_pong())
+    //             .and_then(|(client, done)| {
+    //                 if done {
+    //                     Ok(Loop::Break(client))
+    //                 } else {
+    //                     Ok(Loop::Continue(client))
+    //                 }
+    //             })
+    //     });
+
+    //     Arbiter::spawn(
+    //         ping_til_done
+    //             .map(|cli| {
+    //                 println!("{:?}", cli);
+    //                 System::current().stop();
+    //             })
+    //             .map_err(|e| println!("actor dead {:?}", e)),
+    //     );
+
+    //     system.run();
+    // }
 
     #[test]
     fn lua_actor_basic() {
@@ -484,6 +537,7 @@ mod tests {
         let l = addr.send(LuaMessage::Nil);
         Arbiter::spawn(l.map(move |res| {
             if let LuaMessage::String(s) = res {
+                println!("{}", s);
                 assert!(s.ends_with("-src/lua/test/test.lua"));
             } else {
                 assert!(false);
@@ -525,6 +579,37 @@ mod tests {
             }).map_err(|e| println!("actor dead {}", e)))
         });
         Arbiter::spawn(delay.map_err(|e| println!("actor dead {}", e)));
+
+        system.run();
+    }
+
+    #[test]
+    fn lua_actor_thread_yield() {
+        let system = System::new("test");
+
+        let actor = LuaActorBuilder::new()
+            .on_handle_with_lua(
+                r#"
+            local rec = ctx.new_actor("src/lua/test/test_send_result.lua", "child")
+            ctx.state.rec = rec
+            local result = ctx.send(rec, "Hello")
+            print(result)
+            return result
+            "#,
+            )
+            .build()
+            .unwrap();
+
+        let addr = actor.start();
+
+        let l = addr.send(LuaMessage::Nil);
+        Arbiter::spawn(l.map(move |res| {
+            if let LuaMessage::ThreadYield(_) = res {
+                System::current().stop();
+            } else {
+                unimplemented!()
+            }
+        }).map_err(|e| println!("actor dead {}", e)));
 
         system.run();
     }

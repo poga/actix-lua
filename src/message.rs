@@ -1,5 +1,6 @@
 use actix::dev::{MessageResponse, ResponseChannel};
 use actix::prelude::*;
+use regex::Regex;
 use rlua::Result as LuaResult;
 use rlua::{FromLua, Lua, ToLua, Value};
 
@@ -13,6 +14,7 @@ pub enum LuaMessage {
     Boolean(bool),
     Nil,
     Table(HashMap<String, LuaMessage>),
+    ThreadYield(String),
 }
 
 impl<A, M> MessageResponse<A, M> for LuaMessage
@@ -101,7 +103,16 @@ lua_message_convert_float!(f64);
 impl<'lua> FromLua<'lua> for LuaMessage {
     fn from_lua(v: Value, lua: &'lua Lua) -> LuaResult<LuaMessage> {
         match v {
-            Value::String(x) => Ok(LuaMessage::String(String::from_lua(Value::String(x), lua)?)),
+            Value::String(x) => {
+                let re = Regex::new(r"__suspended__(.+)").unwrap();
+                let s = Value::String(x);
+                if let Some(cap) = re.captures(&String::from_lua(s.clone(), lua)?) {
+                    let tid = cap.get(1).unwrap().as_str();
+                    Ok(LuaMessage::ThreadYield(tid.to_string()))
+                } else {
+                    Ok(LuaMessage::String(String::from_lua(s.clone(), lua)?))
+                }
+            }
             Value::Integer(_) => Ok(LuaMessage::Integer(lua.coerce_integer(v)? as i64)),
             Value::Number(_) => Ok(LuaMessage::Number(lua.coerce_number(v)? as f64)),
             Value::Boolean(b) => Ok(LuaMessage::Boolean(b)),
@@ -122,6 +133,8 @@ impl<'lua> ToLua<'lua> for LuaMessage {
             LuaMessage::Boolean(x) => Ok(Value::Boolean(x)),
             LuaMessage::Nil => Ok(Value::Nil),
             LuaMessage::Table(x) => Ok(Value::Table(lua.create_table_from(x)?)),
+
+            _ => unimplemented!(),
         }
     }
 }
