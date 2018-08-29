@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use message::LuaMessage;
 
-use builder::{LuaActorBuilder, WithVmCallback};
+use builder::{InitializeVM, LuaActorBuilder};
 
 /// Top level struct which holds a lua state for itself.
 ///
@@ -52,7 +52,7 @@ impl LuaActor {
         started: Option<String>,
         handle: Option<String>,
         stopped: Option<String>,
-        vm_callback: Option<Box<WithVmCallback>>
+        vm_callback: Option<Box<InitializeVM>>,
     ) -> Result<LuaActor, LuaError> {
         let vm = Lua::new();
 
@@ -115,8 +115,9 @@ fn invoke(
     let args = MultiValue::from_vec(iter);
     // We can't create a function with references to `self` and is 'static since `self` already owns Lua.
     // A function within Lua owning `self` creates self-borrowing cycle.
+    //
     // Also, Lua requires all values passed to it is 'static because we can't know when will Lua GC our value.
-    // Therefore, we use scope to make sure the `__rpc` function is temporary and don't have to deal with 'static lifetime.
+    // Therefore, we use scope to make sure these APIs are temporary and don't have to deal with 'static lifetime.
     //
     // (Quote from: https://github.com/kyren/rlua/issues/56#issuecomment-363928738
     // When the scope ends, the Lua function is 100% guaranteed (afaict!) to be "invalidated".
@@ -623,9 +624,7 @@ mod tests {
             "#,
             )
             .with_vm(move |vm| {
-                let greet = vm.create_function(|_, name: String| {
-                    Ok(format!("Hello, {}!", name))
-                })?;
+                let greet = vm.create_function(|_, name: String| Ok(format!("Hello, {}!", name)))?;
 
                 vm.globals().set("greet", greet)?;
 
@@ -634,7 +633,6 @@ mod tests {
             .build()
             .unwrap()
             .start();
-
 
         let l = addr.send(LuaMessage::from("World"));
         Arbiter::spawn(l.map(|res| {

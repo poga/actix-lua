@@ -2,15 +2,15 @@ use std::fs::File;
 use std::io::prelude::*;
 
 use actor::LuaActor;
-use rlua::{Lua, Error as LuaError};
+use rlua::{Error as LuaError, Lua};
 
-pub type WithVmCallback = Fn(&Lua) -> Result<(), LuaError>;
+pub type InitializeVM = Fn(&Lua) -> Result<(), LuaError>;
 
 pub struct LuaActorBuilder {
     started: Option<String>,
     handle: Option<String>,
     stopped: Option<String>,
-    with_vm_callback: Option<Box<WithVmCallback>>,
+    initialize_vm: Option<Box<InitializeVM>>,
 }
 
 impl Default for LuaActorBuilder {
@@ -20,7 +20,7 @@ impl Default for LuaActorBuilder {
             started: noop.clone(),
             handle: noop.clone(),
             stopped: noop.clone(),
-            with_vm_callback: None,
+            initialize_vm: None,
         }
     }
 }
@@ -60,7 +60,7 @@ impl LuaActorBuilder {
     }
 
     pub fn with_vm<F: Fn(&Lua) -> Result<(), LuaError> + 'static>(mut self, callback: F) -> Self {
-        self.with_vm_callback = Some(Box::new(callback));
+        self.initialize_vm = Some(Box::new(callback));
         self
     }
 
@@ -69,7 +69,7 @@ impl LuaActorBuilder {
             self.started.clone(),
             self.handle.clone(),
             self.stopped.clone(),
-            self.with_vm_callback,
+            self.initialize_vm,
         )
     }
 }
