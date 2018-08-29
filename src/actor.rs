@@ -623,7 +623,7 @@ mod tests {
             return greet(ctx.msg)
             "#,
             )
-            .with_vm(move |vm| {
+            .with_vm(|vm| {
                 let greet = vm.create_function(|_, name: String| Ok(format!("Hello, {}!", name)))?;
 
                 vm.globals().set("greet", greet)?;
