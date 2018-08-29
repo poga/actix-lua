@@ -2,12 +2,15 @@ use std::fs::File;
 use std::io::prelude::*;
 
 use actor::LuaActor;
-use rlua::Error as LuaError;
+use rlua::{Lua, Error as LuaError};
+
+pub type WithVmCallback = Fn(&Lua) -> Result<(), LuaError>;
 
 pub struct LuaActorBuilder {
     started: Option<String>,
     handle: Option<String>,
     stopped: Option<String>,
+    with_vm_callback: Option<Box<WithVmCallback>>,
 }
 
 impl Default for LuaActorBuilder {
@@ -17,6 +20,7 @@ impl Default for LuaActorBuilder {
             started: noop.clone(),
             handle: noop.clone(),
             stopped: noop.clone(),
+            with_vm_callback: None,
         }
     }
 }
@@ -26,40 +30,46 @@ impl LuaActorBuilder {
         LuaActorBuilder::default()
     }
 
-    pub fn on_started(&mut self, filename: &str) -> &mut Self {
+    pub fn on_started(mut self, filename: &str) -> Self {
         self.started = Some(read_to_string(filename));
         self
     }
 
-    pub fn on_started_with_lua(&mut self, script: &str) -> &mut Self {
+    pub fn on_started_with_lua(mut self, script: &str) -> Self {
         self.started = Some(script.to_string());
         self
     }
 
-    pub fn on_handle(&mut self, filename: &str) -> &mut Self {
+    pub fn on_handle(mut self, filename: &str) -> Self {
         self.handle = Some(read_to_string(filename));
         self
     }
-    pub fn on_handle_with_lua(&mut self, script: &str) -> &mut Self {
+    pub fn on_handle_with_lua(mut self, script: &str) -> Self {
         self.handle = Some(script.to_string());
         self
     }
 
-    pub fn on_stopped(&mut self, filename: &str) -> &mut Self {
+    pub fn on_stopped(mut self, filename: &str) -> Self {
         self.stopped = Some(read_to_string(filename));
         self
     }
 
-    pub fn on_stopped_with_lua(&mut self, script: &str) -> &mut Self {
+    pub fn on_stopped_with_lua(mut self, script: &str) -> Self {
         self.stopped = Some(script.to_string());
         self
     }
 
-    pub fn build(&self) -> Result<LuaActor, LuaError> {
+    pub fn with_vm<F: Fn(&Lua) -> Result<(), LuaError> + 'static>(mut self, callback: F) -> Self {
+        self.with_vm_callback = Some(Box::new(callback));
+        self
+    }
+
+    pub fn build(self) -> Result<LuaActor, LuaError> {
         LuaActor::new(
             self.started.clone(),
             self.handle.clone(),
             self.stopped.clone(),
+            self.with_vm_callback,
         )
     }
 }

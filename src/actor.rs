@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use message::LuaMessage;
 
-use builder::LuaActorBuilder;
+use builder::{LuaActorBuilder, WithVmCallback};
 
 /// Top level struct which holds a lua state for itself.
 ///
@@ -52,8 +52,14 @@ impl LuaActor {
         started: Option<String>,
         handle: Option<String>,
         stopped: Option<String>,
+        vm_callback: Option<Box<WithVmCallback>>
     ) -> Result<LuaActor, LuaError> {
         let vm = Lua::new();
+
+        if let Some(vm_callback) = vm_callback {
+            vm_callback(&vm)?;
+        }
+
         let prelude = include_str!("lua/prelude.lua");
         vm.eval::<()>(prelude, Some("Prelude"))?;
         {
@@ -600,6 +606,39 @@ mod tests {
         let l = addr.send(LuaMessage::from(1));
         Arbiter::spawn(l.map(|res| {
             assert_eq!(res, LuaMessage::from(2));
+            System::current().stop();
+        }).map_err(|e| println!("actor dead {}", e)));
+
+        system.run();
+    }
+
+    #[test]
+    fn lua_actor_with_vm() {
+        let system = System::new("test");
+
+        let addr = LuaActorBuilder::new()
+            .on_handle_with_lua(
+                r#"
+            return greet(ctx.msg)
+            "#,
+            )
+            .with_vm(move |vm| {
+                let greet = vm.create_function(|_, name: String| {
+                    Ok(format!("Hello, {}!", name))
+                })?;
+
+                vm.globals().set("greet", greet)?;
+
+                Ok(())
+            })
+            .build()
+            .unwrap()
+            .start();
+
+
+        let l = addr.send(LuaMessage::from("World"));
+        Arbiter::spawn(l.map(|res| {
+            assert_eq!(res, LuaMessage::from("Hello, World!"));
             System::current().stop();
         }).map_err(|e| println!("actor dead {}", e)));
 
