@@ -33,13 +33,21 @@ Add `actix-lua` to your `Cargo.toml`:
 actix-lua = "0.3"
 ```
 
-## Message
+## Example
 
-Lua is a dynamic typed language. We use one message type `LuaMessage` to represent all kind of types of a message Lua can send/receive.
+Check [examples](https://github.com/poga/actix-lua/tree/master/examples) directory.
 
-You can convert most of the primitive types to `LuaMessage` with `LuaMessage::from()`.
+## Lua Actor
 
-## Lua API
+Use [`LuaActor`](https://docs.rs/actix-lua/latest/actix_lua/struct.LuaActor.html) to integrate Lua scripts to your system with actor model.
+
+### Message
+
+Actors communicate with each other with messages. `LuaActor` send/receive messages with type `LuaMessage`.
+
+`LuaMessage` can be converted to/from primitive types with `LuaMessage::from()`. Lua types, such as number and table, will be convert to `LuaMessage` automatically.
+
+### Lua API
 
 #### `ctx.msg`
 
