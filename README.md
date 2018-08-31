@@ -43,7 +43,7 @@ Use [`LuaActor`](https://docs.rs/actix-lua/latest/actix_lua/struct.LuaActor.html
 
 ### Message
 
-In actor model, actors communicate with messages. `LuaActor` send/receive messages with the type `LuaMessage`:
+In actor model, actors communicate with messages. `LuaMessage` is the only message type accepted by `LuaActor`:
 
 * `LuaMessage` can be converted to/from primitive types with `LuaMessage::from()`.
 * Lua types(e.g. number, table) will be convert to `LuaMessage` automatically.
