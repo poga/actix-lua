@@ -81,3 +81,27 @@ fn read_to_string(filename: &str) -> String {
 
     body
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::mem::discriminant;
+
+    #[test]
+    fn build_script_error() {
+        let res = LuaActorBuilder::new()
+            .on_handle_with_lua(r"return 1 +")
+            .build();
+
+        if let Err(e) = res {
+            assert_eq!(
+                discriminant(&LuaError::RuntimeError("unexpected symbol".to_string())),
+                discriminant(&e)
+            );
+        // ok
+        } else {
+            panic!("should return error");
+        }
+    }
+
+}

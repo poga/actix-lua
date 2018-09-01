@@ -65,16 +65,25 @@ impl LuaActor {
         {
             let load: Function = vm.globals().get("__load").unwrap();
             if let Some(script) = started {
-                load.call::<(String, String), ()>((script, "started".to_string()))
-                    .unwrap()
+                let res = load.call::<(String, String), ()>((script, "started".to_string()));
+
+                if let Err(e) = res {
+                    return Result::Err(e);
+                }
             }
             if let Some(script) = handle {
-                load.call::<(String, String), ()>((script, "handle".to_string()))
-                    .unwrap()
+                let res = load.call::<(String, String), ()>((script, "handle".to_string()));
+
+                if let Err(e) = res {
+                    return Result::Err(e);
+                }
             }
             if let Some(script) = stopped {
-                load.call::<(String, String), ()>((script, "stopped".to_string()))
-                    .unwrap()
+                let res = load.call::<(String, String), ()>((script, "stopped".to_string()));
+
+                if let Err(e) = res {
+                    return Result::Err(e);
+                }
             }
         }
 
@@ -172,7 +181,7 @@ fn invoke(
                 let recs = recs.borrow_mut();
                 let rec = recs.get(&recipient_name);
 
-                // TODO: error handling
+                // TODO: error handling?
                 if let Some(r) = rec {
                     r.do_send(msg).unwrap();
                 }
