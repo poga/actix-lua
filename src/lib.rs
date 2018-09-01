@@ -6,7 +6,7 @@
 //!
 //! The main type exported by this library is the [`LuaActor`] struct.
 //!
-//! For your convenience, You can create [`LuaActor`] with [`LuaActorBuilder`].
+//! You should create [`LuaActor`] with [`LuaActorBuilder`].
 //!
 //! ```
 //! extern crate actix_lua;

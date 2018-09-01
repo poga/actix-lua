@@ -15,7 +15,9 @@ use builder::{InitializeVM, LuaActorBuilder};
 
 /// Top level struct which holds a lua state for itself.
 ///
-/// `LuaActor` exposed most of the actix context API to the lua enviroment.
+/// It provides most of the actix context API to the lua enviroment.
+///
+/// You can create new `LuaActor` with [`LuaActorBuilder`].
 ///
 ///
 /// ### `ctx.msg`
@@ -42,6 +44,8 @@ use builder::{InitializeVM, LuaActorBuilder};
 ///
 /// ### `ctx.terminate()`
 /// Terminate actor execution.
+///
+/// [`LuaActorBuilder`]: struct.LuaActorBuilder.html
 pub struct LuaActor {
     vm: Lua,
     pub recipients: HashMap<String, Recipient<LuaMessage>>,

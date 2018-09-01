@@ -6,6 +6,7 @@ use rlua::{Error as LuaError, Lua};
 
 pub type InitializeVM = Fn(&Lua) -> Result<(), LuaError>;
 
+/// `LuaActorBuilder` creates a new `LuaActor` with given Lua script.
 pub struct LuaActorBuilder {
     started: Option<String>,
     handle: Option<String>,
@@ -26,6 +27,7 @@ impl Default for LuaActorBuilder {
 }
 
 impl LuaActorBuilder {
+    /// Initialize a new `LuaActorBuilder`
     pub fn new() -> Self {
         LuaActorBuilder::default()
     }
