@@ -370,6 +370,17 @@ mod tests {
     }
 
     #[test]
+    fn lua_actor_syntax_error() {
+        let res = LuaActorBuilder::new()
+            .on_handle_with_lua(r"return 1+")
+            .build();
+
+        if let Ok(_) = res {
+            panic!("should return Err(syntax_error)");
+        }
+    }
+
+    #[test]
     fn lua_actor_return_table() {
         let system = System::new("test");
 
