@@ -67,7 +67,7 @@ impl LuaActor {
         let prelude = include_str!("lua/prelude.lua");
         vm.eval::<()>(prelude, Some("Prelude"))?;
         {
-            let load: Function = vm.globals().get("__load").unwrap();
+            let load: Function = vm.globals().get("__load")?;
             if let Some(script) = started {
                 let res = load.call::<(String, String), ()>((script, "started".to_string()));
 
@@ -116,7 +116,7 @@ fn invoke(
     recs: &mut HashMap<String, Recipient<LuaMessage>>,
     func_name: &str,
     args: Vec<LuaMessage>,
-) -> LuaMessage {
+) -> Result<LuaMessage, LuaError> {
     // `ctx` is used in multiple closure in the lua scope.
     // to create multiple borrow in closures, we use RefCell to move the borrow-checking to runtime.
     // Voliating the check will result in panic. Which shouldn't happend(I think) since lua is single-threaded.
@@ -141,26 +141,22 @@ fn invoke(
     vm.scope(|scope| {
         let globals = vm.globals();
 
-        let notify = scope
-            .create_function_mut(|_, msg: LuaMessage| {
-                let mut ctx = ctx.borrow_mut();
-                ctx.notify(msg);
-                Ok(())
-            })
-            .unwrap();
-        globals.set("notify", notify).unwrap();
+        let notify = scope.create_function_mut(|_, msg: LuaMessage| {
+            let mut ctx = ctx.borrow_mut();
+            ctx.notify(msg);
+            Ok(())
+        })?;
+        globals.set("notify", notify)?;
 
-        let notify_later = scope
-            .create_function_mut(|_, (msg, secs): (LuaMessage, u64)| {
-                let mut ctx = ctx.borrow_mut();
-                ctx.notify_later(msg, Duration::new(secs, 0));
-                Ok(())
-            })
-            .unwrap();
-        globals.set("notify_later", notify_later).unwrap();
+        let notify_later = scope.create_function_mut(|_, (msg, secs): (LuaMessage, u64)| {
+            let mut ctx = ctx.borrow_mut();
+            ctx.notify_later(msg, Duration::new(secs, 0));
+            Ok(())
+        })?;
+        globals.set("notify_later", notify_later)?;
 
-        let new_actor = scope
-            .create_function_mut(|_, (script_path, name): (String, LuaMessage)| {
+        let new_actor =
+            scope.create_function_mut(|_, (script_path, name): (String, LuaMessage)| {
                 let recipient_id = Uuid::new_v4();
                 let mut recipient_name = format!("LuaActor-{}-{}", recipient_id, &script_path);
                 if let LuaMessage::String(n) = name {
@@ -169,19 +165,17 @@ fn invoke(
 
                 let addr = LuaActorBuilder::new()
                     .on_handle(&script_path)
-                    .build()
-                    .unwrap()
+                    .build()?
                     .start();
 
                 let mut recs = recs.borrow_mut();
                 recs.insert(recipient_name.clone(), addr.recipient());
                 Ok(recipient_name.clone())
-            })
-            .unwrap();
-        globals.set("__new_actor", new_actor).unwrap();
+            })?;
+        globals.set("__new_actor", new_actor)?;
 
-        let do_send = scope
-            .create_function_mut(|_, (recipient_name, msg): (String, LuaMessage)| {
+        let do_send =
+            scope.create_function_mut(|_, (recipient_name, msg): (String, LuaMessage)| {
                 let recs = recs.borrow_mut();
                 let rec = recs.get(&recipient_name);
 
@@ -190,46 +184,42 @@ fn invoke(
                     r.do_send(msg).unwrap();
                 }
                 Ok(())
-            })
-            .unwrap();
-        globals.set("do_send", do_send).unwrap();
+            })?;
+        globals.set("do_send", do_send)?;
 
-        let send = scope
-            .create_function_mut(
-                |_, (recipient_name, msg, cb_thread_id): (String, LuaMessage, i64)| {
-                    // we can't create a lua function which owns `self`
-                    // but `self` is needed for resolving `send` future.
-                    //
-                    // The workaround is we notify ourself with a `SendAttempt` Message
-                    // and resolving `send` future in the `handle` function.
-                    self_addr
-                        .do_send(SendAttempt {
-                            recipient_name,
-                            msg,
-                            cb_thread_id,
-                        })
-                        .unwrap();
+        let send = scope.create_function_mut(
+            |_, (recipient_name, msg, cb_thread_id): (String, LuaMessage, i64)| {
+                // we can't create a lua function which owns `self`
+                // but `self` is needed for resolving `send` future.
+                //
+                // The workaround is we notify ourself with a `SendAttempt` Message
+                // and resolving `send` future in the `handle` function.
+                self_addr
+                    .do_send(SendAttempt {
+                        recipient_name,
+                        msg,
+                        cb_thread_id,
+                    })
+                    .unwrap();
 
-                    Ok(())
-                },
-            )
-            .unwrap();
-        globals.set("send", send).unwrap();
-
-        let terminate = scope
-            .create_function_mut(|_, _: LuaMessage| {
-                let mut ctx = ctx.borrow_mut();
-                ctx.terminate();
                 Ok(())
-            })
-            .unwrap();
-        globals.set("terminate", terminate).unwrap();
+            },
+        )?;
+        globals.set("send", send)?;
+
+        let terminate = scope.create_function_mut(|_, _: LuaMessage| {
+            let mut ctx = ctx.borrow_mut();
+            ctx.terminate();
+            Ok(())
+        })?;
+        globals.set("terminate", terminate)?;
 
         let lua_handle: Result<Function, LuaError> = globals.get(func_name);
         if let Ok(f) = lua_handle {
-            LuaMessage::from_lua(f.call::<MultiValue, Value>(args).unwrap(), &vm).unwrap()
+            Ok(LuaMessage::from_lua(f.call::<MultiValue, Value>(args).unwrap(), &vm).unwrap())
         } else {
-            LuaMessage::Nil
+            // return nil if handle is not defined
+            Ok(LuaMessage::Nil)
         }
     })
 }
@@ -238,25 +228,29 @@ impl Actor for LuaActor {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Context<Self>) {
-        invoke(
+        if let Err(e) = invoke(
             &ctx.address().recipient(),
             ctx,
             &mut self.vm,
             &mut self.recipients,
             "__run",
             vec![LuaMessage::from("started")],
-        );
+        ) {
+            panic!("lua actor started failed {:?}", e);
+        }
     }
 
     fn stopped(&mut self, ctx: &mut Context<Self>) {
-        invoke(
+        if let Err(e) = invoke(
             &ctx.address().recipient(),
             ctx,
             &mut self.vm,
             &mut self.recipients,
             "__run",
             vec![LuaMessage::from("stopped")],
-        );
+        ) {
+            panic!("lua actor stopped failed {:?}", e);
+        }
     }
 }
 
@@ -283,14 +277,18 @@ impl Handler<LuaMessage> for LuaActor {
     type Result = LuaMessage;
 
     fn handle(&mut self, msg: LuaMessage, ctx: &mut Context<Self>) -> Self::Result {
-        invoke(
+        if let Ok(res) = invoke(
             &ctx.address().recipient(),
             ctx,
             &mut self.vm,
             &mut self.recipients,
             "__run",
             vec![LuaMessage::from("handle"), msg],
-        )
+        ) {
+            res
+        } else {
+            LuaMessage::Nil
+        }
     }
 }
 
@@ -298,14 +296,18 @@ impl Handler<SendAttemptResult> for LuaActor {
     type Result = LuaMessage;
 
     fn handle(&mut self, result: SendAttemptResult, ctx: &mut Context<Self>) -> Self::Result {
-        invoke(
+        if let Ok(res) = invoke(
             &ctx.address().recipient(),
             ctx,
             &mut self.vm,
             &mut self.recipients,
             "__resume",
             vec![LuaMessage::from(result.cb_thread_id), result.msg],
-        )
+        ) {
+            res
+        } else {
+            LuaMessage::Nil
+        }
     }
 }
 
