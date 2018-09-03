@@ -32,40 +32,49 @@ impl LuaActorBuilder {
         LuaActorBuilder::default()
     }
 
+    /// create a `started` hook with given lua file
     pub fn on_started(mut self, filename: &str) -> Self {
         self.started = Some(read_to_string(filename));
         self
     }
 
+    /// create a `started` hook with given lua script
     pub fn on_started_with_lua(mut self, script: &str) -> Self {
         self.started = Some(script.to_string());
         self
     }
 
+    /// handle message with given lua file
     pub fn on_handle(mut self, filename: &str) -> Self {
         self.handle = Some(read_to_string(filename));
         self
     }
+
+    /// handle message with given lua script
     pub fn on_handle_with_lua(mut self, script: &str) -> Self {
         self.handle = Some(script.to_string());
         self
     }
 
+    /// create a `stopped` hook with given lua file.
     pub fn on_stopped(mut self, filename: &str) -> Self {
         self.stopped = Some(read_to_string(filename));
         self
     }
 
+    /// create a `stopped` hook with given lua script
     pub fn on_stopped_with_lua(mut self, script: &str) -> Self {
         self.stopped = Some(script.to_string());
         self
     }
 
+    /// config the actor's lua VM
     pub fn with_vm<F: Fn(&Lua) -> Result<(), LuaError> + 'static>(mut self, callback: F) -> Self {
         self.initialize_vm = Some(Box::new(callback));
         self
     }
 
+    /// build the actor
     pub fn build(self) -> Result<LuaActor, LuaError> {
         LuaActor::new(
             self.started.clone(),
