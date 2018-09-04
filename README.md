@@ -19,7 +19,7 @@ fn main () {
         .unwrap()
         .start();
 
-    let res = add.send(LuaMessage:from(100));
+    let res = addr.send(LuaMessage:from(100));
     // return: 142
 }
 ```
