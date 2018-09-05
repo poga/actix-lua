@@ -118,7 +118,9 @@ impl<'lua> FromLua<'lua> for LuaMessage {
             Value::Boolean(b) => Ok(LuaMessage::Boolean(b)),
             Value::Nil => Ok(LuaMessage::Nil),
             Value::Table(t) => Ok(LuaMessage::Table(HashMap::from_lua(Value::Table(t), lua)?)),
-
+            Value::Error(err) => {
+                panic!("Lua error: {:?}", err);
+            },
             _ => unimplemented!(),
         }
     }
