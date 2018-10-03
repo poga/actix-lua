@@ -118,9 +118,10 @@ impl<'lua> FromLua<'lua> for LuaMessage {
             Value::Boolean(b) => Ok(LuaMessage::Boolean(b)),
             Value::Nil => Ok(LuaMessage::Nil),
             Value::Table(t) => Ok(LuaMessage::Table(HashMap::from_lua(Value::Table(t), lua)?)),
+            // TODO: passing rust error to lua error?
             Value::Error(err) => {
                 panic!("Lua error: {:?}", err);
-            },
+            }
             _ => unimplemented!(),
         }
     }
@@ -210,10 +211,10 @@ mod tests {
             discriminant(&LuaMessage::Number(42.5))
         );
         assert_eq!(
-            discriminant(&LuaMessage::from_lua(
-                Value::String(lua.create_string("foo").unwrap()),
-                &lua
-            ).unwrap()),
+            discriminant(
+                &LuaMessage::from_lua(Value::String(lua.create_string("foo").unwrap()), &lua)
+                    .unwrap()
+            ),
             discriminant(&LuaMessage::String("foo".to_string()))
         );
         assert_eq!(
@@ -233,5 +234,14 @@ mod tests {
             ),
             discriminant(&LuaMessage::Table(t))
         );
+    }
+
+    #[should_panic]
+    #[test]
+    fn from_lua_error() {
+        use rlua::Error;
+
+        let lua = Lua::new();
+        &LuaMessage::from_lua(Value::Error(Error::RuntimeError("foo".to_string())), &lua).unwrap();
     }
 }
