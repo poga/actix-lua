@@ -1,4 +1,4 @@
-//! # Lua scripting for actix
+//! # actix-lua: Lua scripting for actix
 //!
 //! The `actix-lua` crate provides a safe [Lua programming language] scripting enviroment for [actix], an actor framework.
 //!
