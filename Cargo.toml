@@ -19,7 +19,7 @@ path = "src/lib.rs"
 actix = "0.7"
 futures = "0.1"
 tokio = "0.1"
-rlua = "0.14"
+rlua = "0.15"
 uuid = { version = "0.6", features = ["v4"] }
 regex = "1"
 

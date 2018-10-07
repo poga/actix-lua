@@ -113,8 +113,8 @@ impl<'lua> FromLua<'lua> for LuaMessage {
                     Ok(LuaMessage::String(String::from_lua(s.clone(), lua)?))
                 }
             }
-            Value::Integer(_) => Ok(LuaMessage::Integer(lua.coerce_integer(v)? as i64)),
-            Value::Number(_) => Ok(LuaMessage::Number(lua.coerce_number(v)? as f64)),
+            Value::Integer(n) => Ok(LuaMessage::Integer(n as i64)),
+            Value::Number(n) => Ok(LuaMessage::Number(n as f64)),
             Value::Boolean(b) => Ok(LuaMessage::Boolean(b)),
             Value::Nil => Ok(LuaMessage::Nil),
             Value::Table(t) => Ok(LuaMessage::Table(HashMap::from_lua(Value::Table(t), lua)?)),
