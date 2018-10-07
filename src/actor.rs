@@ -65,7 +65,7 @@ impl LuaActor {
         }
 
         let prelude = include_str!("lua/prelude.lua");
-        vm.eval::<()>(prelude, Some("Prelude"))?;
+        vm.eval::<_, ()>(prelude, Some("Prelude"))?;
         {
             let load: Function = vm.globals().get("__load")?;
             if let Some(script) = started {
