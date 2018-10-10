@@ -216,7 +216,10 @@ fn invoke(
 
         let lua_handle: Result<Function, LuaError> = globals.get(func_name);
         if let Ok(f) = lua_handle {
-            Ok(LuaMessage::from_lua(f.call::<MultiValue, Value>(args).unwrap(), &vm).unwrap())
+            match f.call::<MultiValue, Value>(args) {
+                Err(e) => panic!(e.to_string()),
+                Ok(ret) => Ok(LuaMessage::from_lua(ret, &vm).unwrap()),
+            }
         } else {
             // return nil if handle is not defined
             Ok(LuaMessage::Nil)
