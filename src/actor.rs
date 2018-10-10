@@ -123,7 +123,8 @@ fn invoke(
     let ctx = RefCell::new(ctx);
     let recs = RefCell::new(recs);
 
-    let iter = args.into_iter()
+    let iter = args
+        .into_iter()
         .map(|msg| msg.to_lua(&vm).unwrap())
         .collect();
     let args = MultiValue::from_vec(iter);
@@ -199,8 +200,7 @@ fn invoke(
                         recipient_name,
                         msg,
                         cb_thread_id,
-                    })
-                    .unwrap();
+                    }).unwrap();
 
                 Ok(())
             },
@@ -330,8 +330,7 @@ impl Handler<SendAttempt> for LuaActor {
                     }
                 };
                 actix::fut::ok(())
-            })
-            .wait(ctx);
+            }).wait(ctx);
 
         LuaMessage::Nil
     }
@@ -361,10 +360,12 @@ mod tests {
         let lua_addr = lua_actor_with_handle(r#"return ctx.msg + 1"#).start();
 
         let l = lua_addr.send(LuaMessage::from(1));
-        Arbiter::spawn(l.map(|res| {
-            assert_eq!(res, LuaMessage::from(2));
-            System::current().stop();
-        }).map_err(|e| println!("actor dead {}", e)));
+        Arbiter::spawn(
+            l.map(|res| {
+                assert_eq!(res, LuaMessage::from(2));
+                System::current().stop();
+            }).map_err(|e| println!("actor dead {}", e)),
+        );
 
         system.run();
     }
@@ -415,13 +416,15 @@ mod tests {
         ).start();
 
         let l = lua_addr.send(LuaMessage::from(3));
-        Arbiter::spawn(l.map(|res| {
-            let mut t = HashMap::new();
-            t.insert("x".to_string(), LuaMessage::from(1));
+        Arbiter::spawn(
+            l.map(|res| {
+                let mut t = HashMap::new();
+                t.insert("x".to_string(), LuaMessage::from(1));
 
-            assert_eq!(res, LuaMessage::from(t));
-            System::current().stop();
-        }).map_err(|e| println!("actor dead {}", e)));
+                assert_eq!(res, LuaMessage::from(t));
+                System::current().stop();
+            }).map_err(|e| println!("actor dead {}", e)),
+        );
 
         system.run();
     }
@@ -440,14 +443,18 @@ mod tests {
         ).start();
 
         let l = lua_addr.send(LuaMessage::Nil);
-        Arbiter::spawn(l.map(move |res| {
-            assert_eq!(res, LuaMessage::from(1));
-            let l2 = lua_addr.send(LuaMessage::Nil);
-            Arbiter::spawn(l2.map(|res| {
-                assert_eq!(res, LuaMessage::from(2));
-                System::current().stop();
-            }).map_err(|e| println!("actor dead {}", e)));
-        }).map_err(|e| println!("actor dead {}", e)));
+        Arbiter::spawn(
+            l.map(move |res| {
+                assert_eq!(res, LuaMessage::from(1));
+                let l2 = lua_addr.send(LuaMessage::Nil);
+                Arbiter::spawn(
+                    l2.map(|res| {
+                        assert_eq!(res, LuaMessage::from(2));
+                        System::current().stop();
+                    }).map_err(|e| println!("actor dead {}", e)),
+                );
+            }).map_err(|e| println!("actor dead {}", e)),
+        );
 
         system.run();
     }
@@ -461,8 +468,7 @@ mod tests {
                 r#"
             ctx.notify(100)
             "#,
-            )
-            .on_handle_with_lua(
+            ).on_handle_with_lua(
                 r#"
             if ctx.msg == 100 then
                 ctx.state.notified = ctx.msg
@@ -470,17 +476,18 @@ mod tests {
 
             return ctx.msg + ctx.state.notified
             "#,
-            )
-            .build()
+            ).build()
             .unwrap()
             .start();
 
         let delay = Delay::new(Duration::from_secs(1)).map(move |()| {
             let l = addr.send(LuaMessage::from(1));
-            Arbiter::spawn(l.map(|res| {
-                assert_eq!(res, LuaMessage::from(101));
-                System::current().stop();
-            }).map_err(|e| println!("actor dead {}", e)))
+            Arbiter::spawn(
+                l.map(|res| {
+                    assert_eq!(res, LuaMessage::from(101));
+                    System::current().stop();
+                }).map_err(|e| println!("actor dead {}", e)),
+            )
         });
         Arbiter::spawn(delay.map_err(|e| println!("actor dead {}", e)));
 
@@ -496,8 +503,7 @@ mod tests {
                 r#"
             ctx.notify_later(100, 1)
             "#,
-            )
-            .on_handle_with_lua(
+            ).on_handle_with_lua(
                 r#"
             if ctx.msg == 100 then
                 ctx.state.notified = ctx.msg
@@ -505,17 +511,18 @@ mod tests {
 
             return ctx.msg + ctx.state.notified
             "#,
-            )
-            .build()
+            ).build()
             .unwrap()
             .start();
 
         let delay = Delay::new(Duration::from_secs(2)).map(move |()| {
             let l2 = addr.send(LuaMessage::from(1));
-            Arbiter::spawn(l2.map(|res| {
-                assert_eq!(res, LuaMessage::from(101));
-                System::current().stop();
-            }).map_err(|e| println!("actor dead {}", e)))
+            Arbiter::spawn(
+                l2.map(|res| {
+                    assert_eq!(res, LuaMessage::from(101));
+                    System::current().stop();
+                }).map_err(|e| println!("actor dead {}", e)),
+            )
         });
         Arbiter::spawn(delay.map_err(|e| println!("actor dead {}", e)));
 
@@ -533,16 +540,18 @@ mod tests {
         "#,
         ).start();
         let l = addr.send(LuaMessage::Nil);
-        Arbiter::spawn(l.map(move |res| {
-            if let LuaMessage::String(s) = res {
-                println!("{}", s);
-                assert!(s.ends_with("-src/lua/test/test.lua"));
-            } else {
-                assert!(false);
-            }
+        Arbiter::spawn(
+            l.map(move |res| {
+                if let LuaMessage::String(s) = res {
+                    println!("{}", s);
+                    assert!(s.ends_with("-src/lua/test/test.lua"));
+                } else {
+                    assert!(false);
+                }
 
-            System::current().stop();
-        }).map_err(|e| println!("actor dead {}", e)));
+                System::current().stop();
+            }).map_err(|e| println!("actor dead {}", e)),
+        );
 
         system.run();
     }
@@ -559,22 +568,22 @@ mod tests {
             local result = ctx.send(rec, "Hello")
             print("new actor addr name", rec, result)
             "#,
-            )
-            .on_handle_with_lua(
+            ).on_handle_with_lua(
                 r#"
             return ctx.msg
             "#,
-            )
-            .build()
+            ).build()
             .unwrap()
             .start();
 
         let delay = Delay::new(Duration::from_secs(1)).map(move |()| {
             let l = addr.send(LuaMessage::Nil);
-            Arbiter::spawn(l.map(|res| {
-                assert_eq!(res, LuaMessage::Nil);
-                System::current().stop();
-            }).map_err(|e| println!("actor dead {}", e)))
+            Arbiter::spawn(
+                l.map(|res| {
+                    assert_eq!(res, LuaMessage::Nil);
+                    System::current().stop();
+                }).map_err(|e| println!("actor dead {}", e)),
+            )
         });
         Arbiter::spawn(delay.map_err(|e| println!("actor dead {}", e)));
 
@@ -594,20 +603,21 @@ mod tests {
             print(result)
             return result
             "#,
-            )
-            .build()
+            ).build()
             .unwrap();
 
         let addr = actor.start();
 
         let l = addr.send(LuaMessage::Nil);
-        Arbiter::spawn(l.map(move |res| {
-            if let LuaMessage::ThreadYield(_) = res {
-                System::current().stop();
-            } else {
-                unimplemented!()
-            }
-        }).map_err(|e| println!("actor dead {}", e)));
+        Arbiter::spawn(
+            l.map(move |res| {
+                if let LuaMessage::ThreadYield(_) = res {
+                    System::current().stop();
+                } else {
+                    unimplemented!()
+                }
+            }).map_err(|e| println!("actor dead {}", e)),
+        );
 
         system.run();
     }
@@ -625,22 +635,22 @@ mod tests {
             local result = ctx.do_send(rec, "Hello")
             print("new actor addr name", rec, result)
             "#,
-            )
-            .on_handle_with_lua(
+            ).on_handle_with_lua(
                 r#"
             return ctx.msg
             "#,
-            )
-            .build()
+            ).build()
             .unwrap()
             .start();
 
         let delay = Delay::new(Duration::from_secs(1)).map(move |()| {
             let l = addr.send(LuaMessage::Nil);
-            Arbiter::spawn(l.map(|res| {
-                assert_eq!(res, LuaMessage::Nil);
-                System::current().stop();
-            }).map_err(|e| println!("actor dead {}", e)))
+            Arbiter::spawn(
+                l.map(|res| {
+                    assert_eq!(res, LuaMessage::Nil);
+                    System::current().stop();
+                }).map_err(|e| println!("actor dead {}", e)),
+            )
         });
         Arbiter::spawn(delay.map_err(|e| println!("actor dead {}", e)));
 
@@ -657,8 +667,7 @@ mod tests {
                 r#"
             ctx.terminate()
             "#,
-            )
-            .on_stopped_with_lua(r#"print("stopped")"#)
+            ).on_stopped_with_lua(r#"print("stopped")"#)
             .build()
             .unwrap()
             .start();
@@ -683,15 +692,16 @@ mod tests {
                 local m = require('lua/test/module')
                 return m.incr(ctx.msg)
             "#,
-            )
-            .build()
+            ).build()
             .unwrap()
             .start();
         let l = addr.send(LuaMessage::from(1));
-        Arbiter::spawn(l.map(|res| {
-            assert_eq!(res, LuaMessage::from(2));
-            System::current().stop();
-        }).map_err(|e| println!("actor dead {}", e)));
+        Arbiter::spawn(
+            l.map(|res| {
+                assert_eq!(res, LuaMessage::from(2));
+                System::current().stop();
+            }).map_err(|e| println!("actor dead {}", e)),
+        );
 
         system.run();
     }
@@ -705,23 +715,24 @@ mod tests {
                 r#"
             return greet(ctx.msg)
             "#,
-            )
-            .with_vm(|vm| {
-                let greet = vm.create_function(|_, name: String| Ok(format!("Hello, {}!", name)))?;
+            ).with_vm(|vm| {
+                let greet =
+                    vm.create_function(|_, name: String| Ok(format!("Hello, {}!", name)))?;
 
                 vm.globals().set("greet", greet)?;
 
                 Ok(())
-            })
-            .build()
+            }).build()
             .unwrap()
             .start();
 
         let l = addr.send(LuaMessage::from("World"));
-        Arbiter::spawn(l.map(|res| {
-            assert_eq!(res, LuaMessage::from("Hello, World!"));
-            System::current().stop();
-        }).map_err(|e| println!("actor dead {}", e)));
+        Arbiter::spawn(
+            l.map(|res| {
+                assert_eq!(res, LuaMessage::from("Hello, World!"));
+                System::current().stop();
+            }).map_err(|e| println!("actor dead {}", e)),
+        );
 
         system.run();
     }
