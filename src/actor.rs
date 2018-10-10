@@ -380,6 +380,30 @@ mod tests {
         }
     }
 
+    #[should_panic]
+    #[test]
+    fn lua_actor_user_error() {
+        let system = System::new("test");
+
+        let lua_addr = lua_actor_with_handle(
+            r#"
+        print("before")
+        error("foo")
+        print("after")
+        "#,
+        ).start();
+
+        let l = lua_addr.send(LuaMessage::from(0));
+        Arbiter::spawn(
+            l.map(|_| {
+                // it should panic
+                System::current().stop();
+            }).map_err(|e| println!("actor dead {}", e)),
+        );
+
+        system.run();
+    }
+
     #[test]
     fn lua_actor_return_table() {
         let system = System::new("test");

@@ -34,6 +34,9 @@ function __run(script_name, msg, thread_id)
     local thread = coroutine.create(__scripts[script_name])
 
     local ok, ret = coroutine.resume(thread)
+    if not ok then
+        error(ret)
+    end
     -- save the thread and its context if the thread yielded
     if coroutine.status(thread) == "suspended" then
         __threads[ctx.thread_id] = { thread = thread, msg = msg }
