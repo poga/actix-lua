@@ -50,6 +50,8 @@ In actor model, actors communicate with messages. `LuaMessage` is the only messa
 
 ### Lua API
 
+**Note**: Avoid declaring global variables in your Lua script. It might conflict with future `actix-lua` update and break your program.
+
 #### `ctx.msg`
 
 The message sent to Lua actor.
