@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use message::LuaMessage;
 
-use builder::{InitializeVM, LuaActorBuilder};
+use builder::LuaActorBuilder;
 
 /// Top level struct which holds a lua state for itself.
 ///
@@ -52,17 +52,12 @@ pub struct LuaActor {
 }
 
 impl LuaActor {
-    pub fn new(
+
+    pub fn new_with_vm( vm: Lua,
         started: Option<String>,
         handle: Option<String>,
         stopped: Option<String>,
-        vm_callback: Option<Box<InitializeVM>>,
     ) -> Result<LuaActor, LuaError> {
-        let vm = Lua::new();
-
-        if let Some(vm_callback) = vm_callback {
-            vm_callback(&vm)?;
-        }
 
         let prelude = include_str!("lua/prelude.lua");
         vm.eval::<_, ()>(prelude, Some("Prelude"))?;
@@ -95,6 +90,15 @@ impl LuaActor {
             vm,
             recipients: HashMap::new(),
         })
+    }
+
+    pub fn new(
+        started: Option<String>,
+        handle: Option<String>,
+        stopped: Option<String>,
+    ) -> Result<LuaActor, LuaError> {
+        let vm = Lua::new();
+        Self::new_with_vm(vm, started, handle, stopped)
     }
 
     /// Add a recipient to the actor's recipient list.
