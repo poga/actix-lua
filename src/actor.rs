@@ -717,19 +717,19 @@ mod tests {
     fn lua_actor_with_vm() {
         let system = System::new("test");
 
+        let vm = Lua::new();
+        vm.globals().set("greet",
+            vm.create_function( |_, name: String|
+                Ok(format!("Hello, {}!", name))
+            ).unwrap()
+        ).unwrap();
+
         let addr = LuaActorBuilder::new()
             .on_handle_with_lua(
                 r#"
             return greet(ctx.msg)
             "#,
-            ).with_vm(|vm| {
-                let greet =
-                    vm.create_function(|_, name: String| Ok(format!("Hello, {}!", name)))?;
-
-                vm.globals().set("greet", greet)?;
-
-                Ok(())
-            }).build()
+            ).build_with_vm(vm)
             .unwrap()
             .start();
 
