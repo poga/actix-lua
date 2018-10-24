@@ -4,14 +4,11 @@ use std::io::prelude::*;
 use actor::LuaActor;
 use rlua::{Error as LuaError, Lua};
 
-pub type InitializeVM = Fn(&Lua) -> Result<(), LuaError>;
-
 /// `LuaActorBuilder` creates a new `LuaActor` with given Lua script.
 pub struct LuaActorBuilder {
     started: Option<String>,
     handle: Option<String>,
     stopped: Option<String>,
-    initialize_vm: Option<Box<InitializeVM>>,
 }
 
 impl Default for LuaActorBuilder {
@@ -21,7 +18,6 @@ impl Default for LuaActorBuilder {
             started: noop.clone(),
             handle: noop.clone(),
             stopped: noop.clone(),
-            initialize_vm: None,
         }
     }
 }
@@ -68,10 +64,14 @@ impl LuaActorBuilder {
         self
     }
 
-    /// config the actor's lua VM
-    pub fn with_vm<F: Fn(&Lua) -> Result<(), LuaError> + 'static>(mut self, callback: F) -> Self {
-        self.initialize_vm = Some(Box::new(callback));
-        self
+    /// build the actor with a preconfigured lua VM
+    pub fn build_with_vm(self, vm: Lua) -> Result<LuaActor, LuaError> {
+        LuaActor::new_with_vm(
+            vm,
+            self.started.clone(),
+            self.handle.clone(),
+            self.stopped.clone()
+        )
     }
 
     /// build the actor
@@ -79,8 +79,7 @@ impl LuaActorBuilder {
         LuaActor::new(
             self.started.clone(),
             self.handle.clone(),
-            self.stopped.clone(),
-            self.initialize_vm,
+            self.stopped.clone()
         )
     }
 }
