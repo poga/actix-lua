@@ -70,7 +70,7 @@ impl LuaActorBuilder {
             vm,
             self.started.clone(),
             self.handle.clone(),
-            self.stopped.clone()
+            self.stopped.clone(),
         )
     }
 
@@ -79,7 +79,7 @@ impl LuaActorBuilder {
         LuaActor::new(
             self.started.clone(),
             self.handle.clone(),
-            self.stopped.clone()
+            self.stopped.clone(),
         )
     }
 }

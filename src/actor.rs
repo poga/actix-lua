@@ -52,13 +52,12 @@ pub struct LuaActor {
 }
 
 impl LuaActor {
-
-    pub fn new_with_vm( vm: Lua,
+    pub fn new_with_vm(
+        vm: Lua,
         started: Option<String>,
         handle: Option<String>,
         stopped: Option<String>,
     ) -> Result<LuaActor, LuaError> {
-
         let prelude = include_str!("lua/prelude.lua");
         vm.eval::<_, ()>(prelude, Some("Prelude"))?;
         {
@@ -718,11 +717,12 @@ mod tests {
         let system = System::new("test");
 
         let vm = Lua::new();
-        vm.globals().set("greet",
-            vm.create_function( |_, name: String|
-                Ok(format!("Hello, {}!", name))
-            ).unwrap()
-        ).unwrap();
+        vm.globals()
+            .set(
+                "greet",
+                vm.create_function(|_, name: String| Ok(format!("Hello, {}!", name)))
+                    .unwrap(),
+            ).unwrap();
 
         let addr = LuaActorBuilder::new()
             .on_handle_with_lua(
