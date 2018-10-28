@@ -48,3 +48,10 @@ mod message;
 pub use actor::LuaActor;
 pub use builder::LuaActorBuilder;
 pub use message::LuaMessage;
+
+pub mod dev {
+    /// Re-export `rlua` interface for library developers
+    pub mod rlua {
+        pub use rlua::*;
+    }
+}
