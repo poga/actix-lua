@@ -65,6 +65,8 @@ impl LuaActorBuilder {
     }
 
     /// build the actor with a preconfigured lua VM
+    ///
+    /// It's important to use the `rlua` interface exported by `actix-lua` with `use actix_lua::dev::rlua::*`
     pub fn build_with_vm(self, vm: Lua) -> Result<LuaActor, LuaError> {
         LuaActor::new_with_vm(
             vm,
