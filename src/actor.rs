@@ -220,7 +220,7 @@ fn invoke(
         let lua_handle: Result<Function, LuaError> = globals.get(func_name);
         if let Ok(f) = lua_handle {
             match f.call::<MultiValue, Value>(args) {
-                Err(e) => panic!(e.to_string()),
+                Err(e) => panic!("{:?}", e),
                 Ok(ret) => Ok(LuaMessage::from_lua(ret, &vm).unwrap()),
             }
         } else {

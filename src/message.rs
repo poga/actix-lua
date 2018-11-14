@@ -118,7 +118,6 @@ impl<'lua> FromLua<'lua> for LuaMessage {
             Value::Boolean(b) => Ok(LuaMessage::Boolean(b)),
             Value::Nil => Ok(LuaMessage::Nil),
             Value::Table(t) => Ok(LuaMessage::Table(HashMap::from_lua(Value::Table(t), lua)?)),
-            // TODO: passing rust error to lua error?
             Value::Error(err) => {
                 panic!("Lua error: {:?}", err);
             }
@@ -137,6 +136,7 @@ impl<'lua> ToLua<'lua> for LuaMessage {
             LuaMessage::Nil => Ok(Value::Nil),
             LuaMessage::Table(x) => Ok(Value::Table(lua.create_table_from(x)?)),
 
+            // TODO: passing rust error to lua error?
             _ => unimplemented!(),
         }
     }
