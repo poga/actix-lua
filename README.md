@@ -37,6 +37,8 @@ actix-lua = "0.5"
 
 Check [examples](https://github.com/poga/actix-lua/tree/master/examples) directory.
 
+There's also a write-up about analyzing streaming data with actix-lua. [link](https://devpoga.org/post/parsing-streaming-data-actix-lua/)
+
 ## Lua Actor
 
 Use [`LuaActor`](https://docs.rs/actix-lua/latest/actix_lua/struct.LuaActor.html) to integrate Lua scripts to your system with actor model.
