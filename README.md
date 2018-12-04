@@ -7,8 +7,8 @@
 A safe scripting environment for [actix](https://github.com/actix/actix) with the [Lua Programming Language](https://www.lua.org):
 
 * Each `LuaActor` is an isolated Lua VM.
-* Predefined message types: String, Integer, Number, Boolean, Nil, and Table.
-* Asynchronous `send` with Lua coroutine.
+* Communicate between actors with predefined message types: `String`, `Integer`, `Number`, `Boolean`, `Nil`, and `Table`.
+* Asynchronous `send` between actors with Lua coroutine.
 
 
 ## Synopsis
