@@ -13,6 +13,8 @@ A safe scripting environment for [actix](https://github.com/actix/actix) with th
 
 ## Synopsis
 
+A basic Lua actor
+
 ```rust
 extern crate actix_lua;
 use actix_lua::{LuaActorBuilder, LuaMessage};
@@ -28,6 +30,30 @@ fn main () {
     // return: 142
 }
 ```
+
+You can send messages to other actor asynchronously with `ctx.send`
+
+```rust
+let addr = LuaActorBuilder::new()
+    // create a new LuaActor from a lua script when the actor is started.
+    // send message to the newly created actor with `ctx.send`, block and wait for its response.
+    .on_started_with_lua(
+        r#"
+    local rec = ctx.new_actor("src/lua/test/test_send.lua", "child")
+    ctx.state.rec = rec
+    local result = ctx.send(rec, "Hello")
+    print("new actor addr name", rec, result)
+    "#,
+    ).on_handle_with_lua(
+        r#"
+    return ctx.msg
+    "#,
+    ).build()
+    .unwrap()
+    .start();
+```
+
+For more complex usage of `ctx.send`, check test `lua_actor_thread_yield_and_callback_message`.
 
 ## Install
 

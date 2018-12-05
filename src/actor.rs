@@ -35,6 +35,9 @@ use builder::LuaActorBuilder;
 /// ### `local result = ctx.send(recipient, msg)`
 /// Send message `msg` to `recipient asynchronously and wait for response.
 ///
+/// Calling `ctx.send` yield the current coroutine and returns a `ThreadYield(thread_id)` message.
+/// LuaActor will wait for the response and resume the yielded coroutine once the response is returned.
+///
 /// Equivalent to `actix::Recipient.send`.
 ///
 /// ### `ctx.do_send(recipient, msg)`
@@ -332,7 +335,7 @@ impl Handler<SendAttempt> for LuaActor {
                         cb_thread_id: attempt.cb_thread_id,
                     }),
                     _ => {
-                        panic!("send attempt failed {:?}", res);
+                        panic!("send attempt failed: {:?}", res);
                     }
                 };
                 actix::fut::ok(())
@@ -619,6 +622,66 @@ mod tests {
             l.map(move |res| {
                 if let LuaMessage::ThreadYield(_) = res {
                     System::current().stop();
+                } else {
+                    unimplemented!()
+                }
+            }).map_err(|e| println!("actor dead {}", e)),
+        );
+
+        system.run();
+    }
+
+    #[test]
+    fn lua_actor_thread_yield_and_callback_message() {
+        struct Callback;
+        impl Actor for Callback {
+            type Context = Context<Self>;
+        }
+
+        impl Handler<LuaMessage> for Callback {
+            type Result = LuaMessage;
+
+            fn handle(&mut self, msg: LuaMessage, _ctx: &mut Context<Self>) -> Self::Result {
+                println!("callback recived: {:?}", msg);
+                if let LuaMessage::String(s) = msg {
+                    if s == "Hello processed" {
+                        println!("{:?}", s);
+                        System::current().stop();
+                        LuaMessage::Boolean(true)
+                    } else {
+                        unimplemented!()
+                    }
+                } else {
+                    unimplemented!()
+                }
+            }
+        }
+
+        let callback_addr = Callback.start();
+
+        let system = System::new("test");
+
+        let mut actor = LuaActorBuilder::new()
+            .on_handle_with_lua(
+                r#"
+            local rec = ctx.new_actor("src/lua/test/test_send_result.lua", "child")
+            ctx.state.rec = rec
+            local result = ctx.send(rec, "Hello")
+            print("send result", result)
+            ctx.send("callback", result)
+            "#,
+            ).build()
+            .unwrap();
+
+        actor.add_recipients("callback", callback_addr.recipient());
+
+        let addr = actor.start();
+
+        let l = addr.send(LuaMessage::Nil);
+        Arbiter::spawn(
+            l.map(move |res| {
+                if let LuaMessage::ThreadYield(_) = res {
+                    // since the coroutine yielded, `handle` will return a `ThreadYield` message.
                 } else {
                     unimplemented!()
                 }
