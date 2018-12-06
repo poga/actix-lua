@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::prelude::*;
 
-use actor::LuaActor;
+use crate::actor::LuaActor;
 use rlua::{Error as LuaError, Lua};
 
 /// `LuaActorBuilder` creates a new `LuaActor` with given Lua script.

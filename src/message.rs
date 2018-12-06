@@ -1,5 +1,5 @@
-use actix::dev::{MessageResponse, ResponseChannel};
-use actix::prelude::*;
+use ::actix::dev::{MessageResponse, ResponseChannel};
+use ::actix::prelude::*;
 use regex::Regex;
 use rlua::Result as LuaResult;
 use rlua::{FromLua, Lua, ToLua, Value};

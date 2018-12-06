@@ -9,6 +9,7 @@ keywords = ["actix", "actor", "lua"]
 categories = ["network-programming", "asynchronous"]
 license = "MIT"
 exclude = [".gitignore"]
+edition = '2018'
 
 
 [lib]

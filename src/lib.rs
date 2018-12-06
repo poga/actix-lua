@@ -32,12 +32,6 @@
 //! [`LuaActor`]: struct.LuaActor.html
 //! [`LuaActorBuilder`]: struct.LuaActorBuilder.html
 //! [`LuaMessage`]: enum.LuaMessage.html
-extern crate actix;
-extern crate regex;
-extern crate rlua;
-extern crate tokio;
-extern crate uuid;
-
 #[cfg(test)]
 extern crate futures_timer;
 
@@ -45,9 +39,9 @@ mod actor;
 mod builder;
 mod message;
 
-pub use actor::LuaActor;
-pub use builder::LuaActorBuilder;
-pub use message::LuaMessage;
+pub use crate::actor::LuaActor;
+pub use crate::builder::LuaActorBuilder;
+pub use crate::message::LuaMessage;
 
 /// Re-export `rlua` interface for library developers
 pub mod dev {
