@@ -49,8 +49,8 @@ pub use actor::LuaActor;
 pub use builder::LuaActorBuilder;
 pub use message::LuaMessage;
 
+/// Re-export `rlua` interface for library developers
 pub mod dev {
-    /// Re-export `rlua` interface for library developers
     pub mod rlua {
         pub use rlua::*;
     }
