@@ -34,26 +34,33 @@ fn main () {
 You can send messages to other actor asynchronously with `ctx.send`
 
 ```rust
-let addr = LuaActorBuilder::new()
+struct Callback;
+impl Actor for Callback {
+    type Context = Context<Self>;
+}
+
+impl Handler<LuaMessage> for Callback {
+    type Result = LuaMessage;
+
+    fn handle(&mut self, msg: LuaMessage, _ctx: &mut Context<Self>) -> Self::Result {
+        LuaMessage::String("hello".to_string())
+    }
+}
+
+let mut actor = LuaActorBuilder::new()
     // create a new LuaActor from a lua script when the actor is started.
     // send message to the newly created actor with `ctx.send`, block and wait for its response.
     .on_started_with_lua(
         r#"
-    local rec = ctx.new_actor("src/lua/test/test_send.lua", "child")
-    ctx.state.rec = rec
-    local result = ctx.send(rec, "Hello")
-    print("new actor addr name", rec, result)
-    "#,
-    ).on_handle_with_lua(
-        r#"
-    return ctx.msg
-    "#,
-    ).build()
-    .unwrap()
-    .start();
-```
+    local result = ctx.send("callback, "Hello")
+    print(result) -- print "hello"
+    "#).build()
+    .unwrap();
 
-For more complex usage of `ctx.send`, check test `lua_actor_thread_yield_and_callback_message`.
+actor.add_recipients("callback", Callback.start().recipient());
+
+actor.start();
+```
 
 ## Install
 
@@ -96,10 +103,6 @@ Send message `msg` to self.
 #### `ctx.notify_later(msg, seconds)`
 
 Send message `msg` to self after specified period of time.
-
-#### `local recipient = ctx.new_actor(script_path, [actor_name])`
-
-Create a new actor with given lua script. returns a recipient which can be used in `ctx.send` and `ctx.do_send`.
 
 #### `local result = ctx.send(recipient, msg)`
 

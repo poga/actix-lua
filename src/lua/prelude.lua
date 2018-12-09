@@ -19,9 +19,6 @@ function __run(script_name, msg, thread_id)
 
     ctx.notify = notify
     ctx.notify_later = notify_later
-    ctx.new_actor = function (path)
-        return __new_actor(path)
-    end
     ctx.send = function (recipient_name, msg)
         send(recipient_name, msg, ctx.thread_id)
         return coroutine.yield("__suspended__" .. ctx.thread_id)

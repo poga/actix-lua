@@ -3,15 +3,11 @@ use ::actix::ActorContext;
 use rlua::Error as LuaError;
 use rlua::{FromLua, Function, Lua, MultiValue, ToLua, Value};
 
+use crate::message::LuaMessage;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::str;
 use std::time::Duration;
-use uuid::Uuid;
-
-use crate::message::LuaMessage;
-
-use crate::builder::LuaActorBuilder;
 
 /// Top level struct which holds a lua state for itself.
 ///
@@ -28,9 +24,6 @@ use crate::builder::LuaActorBuilder;
 ///
 /// ### `ctx.notify_later(msg, seconds)`
 /// Send message `msg` to self after specified period of time.
-///
-/// ### `local recipient = ctx.new_actor(script_path, [actor_name])`
-/// Create a new actor with given lua script. returns a recipient which can be used in `ctx.send` and `ctx.do_send`.
 ///
 /// ### `local result = ctx.send(recipient, msg)`
 /// Send message `msg` to `recipient asynchronously and wait for response.
@@ -161,25 +154,6 @@ fn invoke(
             Ok(())
         })?;
         globals.set("notify_later", notify_later)?;
-
-        let new_actor =
-            scope.create_function_mut(|_, (script_path, name): (String, LuaMessage)| {
-                let recipient_id = Uuid::new_v4();
-                let mut recipient_name = format!("LuaActor-{}-{}", recipient_id, &script_path);
-                if let LuaMessage::String(n) = name {
-                    recipient_name = n;
-                }
-
-                let addr = LuaActorBuilder::new()
-                    .on_handle(&script_path)
-                    .build()?
-                    .start();
-
-                let mut recs = recs.borrow_mut();
-                recs.insert(recipient_name.clone(), addr.recipient());
-                Ok(recipient_name.clone())
-            })?;
-        globals.set("__new_actor", new_actor)?;
 
         let do_send =
             scope.create_function_mut(|_, (recipient_name, msg): (String, LuaMessage)| {
@@ -555,107 +529,10 @@ mod tests {
     }
 
     #[test]
-    fn lua_actor_rpc_new_actor() {
-        let system = System::new("test");
-
-        let addr = lua_actor_with_handle(
-            r#"
-        local id = ctx.new_actor("src/lua/test/test.lua")
-        return id
-        "#,
-        )
-        .start();
-        let l = addr.send(LuaMessage::Nil);
-        Arbiter::spawn(
-            l.map(move |res| {
-                if let LuaMessage::String(s) = res {
-                    println!("{}", s);
-                    assert!(s.ends_with("-src/lua/test/test.lua"));
-                } else {
-                    assert!(false);
-                }
-
-                System::current().stop();
-            })
-            .map_err(|e| println!("actor dead {}", e)),
-        );
-
-        system.run();
-    }
-
-    #[test]
     fn lua_actor_send() {
+        use std::mem::discriminant;
         let system = System::new("test");
 
-        let addr = LuaActorBuilder::new()
-            .on_started_with_lua(
-                r#"
-            local rec = ctx.new_actor("src/lua/test/test_send.lua", "child")
-            ctx.state.rec = rec
-            local result = ctx.send(rec, "Hello")
-            print("new actor addr name", rec, result)
-            "#,
-            )
-            .on_handle_with_lua(
-                r#"
-            return ctx.msg
-            "#,
-            )
-            .build()
-            .unwrap()
-            .start();
-
-        let delay = Delay::new(Duration::from_secs(1)).map(move |()| {
-            let l = addr.send(LuaMessage::Nil);
-            Arbiter::spawn(
-                l.map(|res| {
-                    assert_eq!(res, LuaMessage::Nil);
-                    System::current().stop();
-                })
-                .map_err(|e| println!("actor dead {}", e)),
-            )
-        });
-        Arbiter::spawn(delay.map_err(|e| println!("actor dead {}", e)));
-
-        system.run();
-    }
-
-    #[test]
-    fn lua_actor_thread_yield() {
-        let system = System::new("test");
-
-        let actor = LuaActorBuilder::new()
-            .on_handle_with_lua(
-                r#"
-            local rec = ctx.new_actor("src/lua/test/test_send_result.lua", "child")
-            ctx.state.rec = rec
-            local result = ctx.send(rec, "Hello")
-            print(result)
-            return result
-            "#,
-            )
-            .build()
-            .unwrap();
-
-        let addr = actor.start();
-
-        let l = addr.send(LuaMessage::Nil);
-        Arbiter::spawn(
-            l.map(move |res| {
-                if let LuaMessage::ThreadYield(_) = res {
-                    System::current().stop();
-                } else {
-                    unimplemented!()
-                }
-            })
-            .map_err(|e| println!("actor dead {}", e)),
-        );
-
-        system.run();
-    }
-
-    #[test]
-    fn lua_actor_thread_yield_and_callback_message() {
         struct Callback;
         impl Actor for Callback {
             type Context = Context<Self>;
@@ -665,50 +542,160 @@ mod tests {
             type Result = LuaMessage;
 
             fn handle(&mut self, msg: LuaMessage, _ctx: &mut Context<Self>) -> Self::Result {
-                println!("callback recived: {:?}", msg);
+                // check msg type
+                assert_eq!(
+                    discriminant(&msg),
+                    discriminant(&LuaMessage::String("foo".to_string()))
+                );
                 if let LuaMessage::String(s) = msg {
-                    if s == "Hello processed" {
-                        println!("{:?}", s);
-                        System::current().stop();
-                        LuaMessage::Boolean(true)
-                    } else {
-                        unimplemented!()
-                    }
+                    assert_eq!(s, "Hello");
+                    System::current().stop();
+                    LuaMessage::Boolean(true)
                 } else {
                     unimplemented!()
                 }
             }
         }
-
         let callback_addr = Callback.start();
 
-        let system = System::new("test");
-
         let mut actor = LuaActorBuilder::new()
-            .on_handle_with_lua(
+            .on_started_with_lua(
                 r#"
-            local rec = ctx.new_actor("src/lua/test/test_send_result.lua", "child")
-            ctx.state.rec = rec
-            local result = ctx.send(rec, "Hello")
-            print("send result", result)
-            ctx.send("callback", result)
+            local result = ctx.send("callback", "Hello")
+            print("result", "=", result)
             "#,
             )
             .build()
             .unwrap();
 
         actor.add_recipients("callback", callback_addr.recipient());
+        actor.start();
+        system.run();
+    }
+
+    #[test]
+    fn lua_actor_thread_yield() {
+        use std::mem::discriminant;
+        struct Callback;
+        impl Actor for Callback {
+            type Context = Context<Self>;
+        }
+
+        impl Handler<LuaMessage> for Callback {
+            type Result = LuaMessage;
+
+            fn handle(&mut self, _: LuaMessage, _ctx: &mut Context<Self>) -> Self::Result {
+                LuaMessage::Nil
+            }
+        }
+
+        let system = System::new("test");
+
+        let mut actor = LuaActorBuilder::new()
+            .on_handle_with_lua(
+                r#"
+            local result = ctx.send("callback", "Hello")
+            print(result)
+            return result
+            "#,
+            )
+            .build()
+            .unwrap();
+
+        actor.add_recipients("callback", Callback.start().recipient());
 
         let addr = actor.start();
 
         let l = addr.send(LuaMessage::Nil);
         Arbiter::spawn(
             l.map(move |res| {
-                if let LuaMessage::ThreadYield(_) = res {
-                    // since the coroutine yielded, `handle` will return a `ThreadYield` message.
+                assert_eq!(
+                    discriminant(&res),
+                    discriminant(&LuaMessage::ThreadYield("foo".to_string()))
+                );
+                System::current().stop();
+            })
+            .map_err(|e| println!("actor dead {}", e)),
+        );
+
+        system.run();
+    }
+
+    #[test]
+    fn lua_actor_thread_yield_and_callback_message() {
+        use std::mem::discriminant;
+
+        struct Callback;
+        impl Actor for Callback {
+            type Context = Context<Self>;
+        }
+
+        impl Handler<LuaMessage> for Callback {
+            type Result = LuaMessage;
+
+            fn handle(&mut self, msg: LuaMessage, _ctx: &mut Context<Self>) -> Self::Result {
+                // check msg type
+                assert_eq!(
+                    discriminant(&msg),
+                    discriminant(&LuaMessage::String("foo".to_string()))
+                );
+                if let LuaMessage::String(s) = msg {
+                    assert_eq!(s, "Hello");
+                    LuaMessage::String(format!("{} from callback", s))
                 } else {
                     unimplemented!()
                 }
+            }
+        }
+
+        struct Check;
+        impl Actor for Check {
+            type Context = Context<Self>;
+        }
+
+        impl Handler<LuaMessage> for Check {
+            type Result = LuaMessage;
+
+            fn handle(&mut self, msg: LuaMessage, _ctx: &mut Context<Self>) -> Self::Result {
+                // check msg type
+                assert_eq!(
+                    discriminant(&msg),
+                    discriminant(&LuaMessage::String("foo".to_string()))
+                );
+                if let LuaMessage::String(s) = msg {
+                    assert_eq!(s, "Hello from callback");
+                    System::current().stop();
+                    LuaMessage::Nil
+                } else {
+                    unimplemented!()
+                }
+            }
+        }
+
+        let system = System::new("test");
+        let mut actor = LuaActorBuilder::new()
+            .on_handle_with_lua(
+                r#"
+            local result = ctx.send("callback", ctx.msg)
+            print("send result", "=", result)
+            ctx.send("check", result)
+            "#,
+            )
+            .build()
+            .unwrap();
+
+        actor.add_recipients("callback", Callback.start().recipient());
+        actor.add_recipients("check", Check.start().recipient());
+
+        let addr = actor.start();
+
+        let l = addr.send(LuaMessage::String("Hello".to_string()));
+        Arbiter::spawn(
+            l.map(move |res| {
+                assert_eq!(
+                    discriminant(&res),
+                    discriminant(&LuaMessage::ThreadYield("foo".to_string()))
+                );
             })
             .map_err(|e| println!("actor dead {}", e)),
         );
@@ -718,38 +705,53 @@ mod tests {
 
     #[test]
     fn lua_actor_do_send() {
-        // TODO: we're not really verifying the correctness of `do_send` here
+        use std::mem::discriminant;
+
+        struct Check;
+        impl Actor for Check {
+            type Context = Context<Self>;
+        }
+
+        impl Handler<LuaMessage> for Check {
+            type Result = LuaMessage;
+
+            fn handle(&mut self, msg: LuaMessage, _ctx: &mut Context<Self>) -> Self::Result {
+                // check msg type
+                assert_eq!(
+                    discriminant(&msg),
+                    discriminant(&LuaMessage::String("foo".to_string()))
+                );
+                if let LuaMessage::String(s) = msg {
+                    assert_eq!(s, "Hello");
+                    System::current().stop();
+                    LuaMessage::Nil
+                } else {
+                    unimplemented!()
+                }
+            }
+        }
         let system = System::new("test");
 
-        let addr = LuaActorBuilder::new()
-            .on_started_with_lua(
-                r#"
-            local rec = ctx.new_actor("src/lua/test/test_send.lua", "child")
-            ctx.state.rec = rec
-            local result = ctx.do_send(rec, "Hello")
-            print("new actor addr name", rec, result)
-            "#,
-            )
+        let mut actor = LuaActorBuilder::new()
             .on_handle_with_lua(
                 r#"
+            local result = ctx.do_send("check", "Hello")
+            print("new actor addr name", rec, result)
             return ctx.msg
             "#,
             )
             .build()
-            .unwrap()
-            .start();
+            .unwrap();
+        actor.add_recipients("check", Check.start().recipient());
+        let addr = actor.start();
 
-        let delay = Delay::new(Duration::from_secs(1)).map(move |()| {
-            let l = addr.send(LuaMessage::Nil);
-            Arbiter::spawn(
-                l.map(|res| {
-                    assert_eq!(res, LuaMessage::Nil);
-                    System::current().stop();
-                })
-                .map_err(|e| println!("actor dead {}", e)),
-            )
-        });
-        Arbiter::spawn(delay.map_err(|e| println!("actor dead {}", e)));
+        let l = addr.send(LuaMessage::Nil);
+        Arbiter::spawn(
+            l.map(|res| {
+                assert_eq!(res, LuaMessage::Nil);
+            })
+            .map_err(|e| println!("actor dead {}", e)),
+        );
 
         system.run();
     }
