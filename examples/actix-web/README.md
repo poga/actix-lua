@@ -1,4 +1,4 @@
-# http-server
+# actix-web lua example
 
 A http server built with `actix-lua` and `actix-web`.
 

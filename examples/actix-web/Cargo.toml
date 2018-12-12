@@ -1,5 +1,5 @@
 [package]
-name = "http-server"
+name = "actix-web-lua-server"
 version = "0.1.0"
 authors = ["Poga Po <poga.bahamut@gmail.com>"]
 
