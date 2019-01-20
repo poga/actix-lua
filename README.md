@@ -10,6 +10,7 @@ A safe scripting environment for [actix](https://github.com/actix/actix) with th
 * Communicate between actors with predefined message types: `String`, `Integer`, `Number`, `Boolean`, `Nil`, and `Table`.
 * Asynchronous `send` between actors with Lua coroutine.
 
+For more info about the "safety", check [rlua's README](https://github.com/kyren/rlua).
 
 ## Synopsis
 
