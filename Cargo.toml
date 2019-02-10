@@ -1,6 +1,6 @@
 [package]
 name = "actix-lua"
-version = "0.7.0"
+version = "0.7.1-alpha.0"
 authors = ["Poga Po <poga.bahamut@gmail.com>"]
 description = "A safe scripting environment for actix with the Lua Programming Language"
 repository = "https://github.com/poga/actix-lua"
