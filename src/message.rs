@@ -2,7 +2,7 @@ use ::actix::dev::{MessageResponse, ResponseChannel};
 use ::actix::prelude::*;
 use regex::Regex;
 use rlua::Result as LuaResult;
-use rlua::{FromLua, Lua, ToLua, Value};
+use rlua::{Context, FromLua, ToLua, Value};
 
 use std::collections::HashMap;
 
@@ -101,23 +101,23 @@ lua_message_convert_float!(f32);
 lua_message_convert_float!(f64);
 
 impl<'lua> FromLua<'lua> for LuaMessage {
-    fn from_lua(v: Value, lua: &'lua Lua) -> LuaResult<LuaMessage> {
+    fn from_lua(v: Value<'lua>, ctx: Context<'lua>) -> LuaResult<LuaMessage> {
         match v {
             Value::String(x) => {
                 let re = Regex::new(r"__suspended__(.+)").unwrap();
                 let s = Value::String(x);
-                if let Some(cap) = re.captures(&String::from_lua(s.clone(), lua)?) {
+                if let Some(cap) = re.captures(&String::from_lua(s.clone(), ctx)?) {
                     let tid = cap.get(1).unwrap().as_str();
                     Ok(LuaMessage::ThreadYield(tid.to_string()))
                 } else {
-                    Ok(LuaMessage::String(String::from_lua(s.clone(), lua)?))
+                    Ok(LuaMessage::String(String::from_lua(s.clone(), ctx)?))
                 }
             }
             Value::Integer(n) => Ok(LuaMessage::Integer(n as i64)),
             Value::Number(n) => Ok(LuaMessage::Number(n as f64)),
             Value::Boolean(b) => Ok(LuaMessage::Boolean(b)),
             Value::Nil => Ok(LuaMessage::Nil),
-            Value::Table(t) => Ok(LuaMessage::Table(HashMap::from_lua(Value::Table(t), lua)?)),
+            Value::Table(t) => Ok(LuaMessage::Table(HashMap::from_lua(Value::Table(t), ctx)?)),
             Value::Error(err) => {
                 panic!("Lua error: {:?}", err);
             }
@@ -127,14 +127,14 @@ impl<'lua> FromLua<'lua> for LuaMessage {
 }
 
 impl<'lua> ToLua<'lua> for LuaMessage {
-    fn to_lua(self, lua: &'lua Lua) -> LuaResult<Value<'lua>> {
+    fn to_lua(self, ctx: Context<'lua>) -> LuaResult<Value<'lua>> {
         match self {
-            LuaMessage::String(x) => Ok(Value::String(lua.create_string(&x)?)),
+            LuaMessage::String(x) => Ok(Value::String(ctx.create_string(&x)?)),
             LuaMessage::Integer(x) => Ok(Value::Integer(x)),
             LuaMessage::Number(x) => Ok(Value::Number(x)),
             LuaMessage::Boolean(x) => Ok(Value::Boolean(x)),
             LuaMessage::Nil => Ok(Value::Nil),
-            LuaMessage::Table(x) => Ok(Value::Table(lua.create_table_from(x)?)),
+            LuaMessage::Table(x) => Ok(Value::Table(ctx.create_table_from(x)?)),
 
             // TODO: passing rust error to lua error?
             _ => unimplemented!(),
@@ -145,6 +145,7 @@ impl<'lua> ToLua<'lua> for LuaMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rlua::Lua;
     use std::mem::discriminant;
 
     #[test]
@@ -169,71 +170,75 @@ mod tests {
     fn to_lua() {
         // we only check if they have the correct variant
         let lua = Lua::new();
-        assert_eq!(
-            discriminant(&LuaMessage::Integer(42).to_lua(&lua).unwrap()),
-            discriminant(&Value::Integer(42))
-        );
-        assert_eq!(
-            discriminant(&LuaMessage::String("foo".to_string()).to_lua(&lua).unwrap()),
-            discriminant(&Value::String(lua.create_string("foo").unwrap()))
-        );
-        assert_eq!(
-            discriminant(&LuaMessage::Number(42.5).to_lua(&lua).unwrap()),
-            discriminant(&Value::Number(42.5))
-        );
-        assert_eq!(
-            discriminant(&LuaMessage::Boolean(true).to_lua(&lua).unwrap()),
-            discriminant(&Value::Boolean(true))
-        );
-        assert_eq!(
-            discriminant(&LuaMessage::Nil.to_lua(&lua).unwrap()),
-            discriminant(&Value::Nil)
-        );
+        lua.context(|ctx| {
+            assert_eq!(
+                discriminant(&LuaMessage::Integer(42).to_lua(ctx).unwrap()),
+                discriminant(&Value::Integer(42))
+            );
+            assert_eq!(
+                discriminant(&LuaMessage::String("foo".to_string()).to_lua(ctx).unwrap()),
+                discriminant(&Value::String(ctx.create_string("foo").unwrap()))
+            );
+            assert_eq!(
+                discriminant(&LuaMessage::Number(42.5).to_lua(ctx).unwrap()),
+                discriminant(&Value::Number(42.5))
+            );
+            assert_eq!(
+                discriminant(&LuaMessage::Boolean(true).to_lua(ctx).unwrap()),
+                discriminant(&Value::Boolean(true))
+            );
+            assert_eq!(
+                discriminant(&LuaMessage::Nil.to_lua(ctx).unwrap()),
+                discriminant(&Value::Nil)
+            );
 
-        let mut t = HashMap::new();
-        t.insert("bar".to_string(), LuaMessage::from("abc"));
-        assert_eq!(
-            discriminant(&LuaMessage::Table(t).to_lua(&lua).unwrap()),
-            discriminant(&Value::Table(lua.create_table().unwrap()))
-        );
+            let mut t = HashMap::new();
+            t.insert("bar".to_string(), LuaMessage::from("abc"));
+            assert_eq!(
+                discriminant(&LuaMessage::Table(t).to_lua(ctx).unwrap()),
+                discriminant(&Value::Table(ctx.create_table().unwrap()))
+            );
+        })
     }
 
     #[test]
     fn from_lua() {
         // we only check if they have the correct variant
         let lua = Lua::new();
-        assert_eq!(
-            discriminant(&LuaMessage::from_lua(Value::Integer(42), &lua).unwrap()),
-            discriminant(&LuaMessage::Integer(42))
-        );
-        assert_eq!(
-            discriminant(&LuaMessage::from_lua(Value::Number(42.5), &lua).unwrap()),
-            discriminant(&LuaMessage::Number(42.5))
-        );
-        assert_eq!(
-            discriminant(
-                &LuaMessage::from_lua(Value::String(lua.create_string("foo").unwrap()), &lua)
-                    .unwrap()
-            ),
-            discriminant(&LuaMessage::String("foo".to_string()))
-        );
-        assert_eq!(
-            discriminant(&LuaMessage::from_lua(Value::Boolean(true), &lua).unwrap()),
-            discriminant(&LuaMessage::Boolean(true))
-        );
-        assert_eq!(
-            discriminant(&LuaMessage::from_lua(Value::Nil, &lua).unwrap()),
-            discriminant(&LuaMessage::Nil)
-        );
+        lua.context(|ctx| {
+            assert_eq!(
+                discriminant(&LuaMessage::from_lua(Value::Integer(42), ctx).unwrap()),
+                discriminant(&LuaMessage::Integer(42))
+            );
+            assert_eq!(
+                discriminant(&LuaMessage::from_lua(Value::Number(42.5), ctx).unwrap()),
+                discriminant(&LuaMessage::Number(42.5))
+            );
+            assert_eq!(
+                discriminant(
+                    &LuaMessage::from_lua(Value::String(ctx.create_string("foo").unwrap()), ctx)
+                        .unwrap()
+                ),
+                discriminant(&LuaMessage::String("foo".to_string()))
+            );
+            assert_eq!(
+                discriminant(&LuaMessage::from_lua(Value::Boolean(true), ctx).unwrap()),
+                discriminant(&LuaMessage::Boolean(true))
+            );
+            assert_eq!(
+                discriminant(&LuaMessage::from_lua(Value::Nil, ctx).unwrap()),
+                discriminant(&LuaMessage::Nil)
+            );
 
-        let mut t = HashMap::new();
-        t.insert("bar".to_string(), LuaMessage::from("abc"));
-        assert_eq!(
-            discriminant(
-                &LuaMessage::from_lua(Value::Table(lua.create_table().unwrap()), &lua).unwrap()
-            ),
-            discriminant(&LuaMessage::Table(t))
-        );
+            let mut t = HashMap::new();
+            t.insert("bar".to_string(), LuaMessage::from("abc"));
+            assert_eq!(
+                discriminant(
+                    &LuaMessage::from_lua(Value::Table(ctx.create_table().unwrap()), ctx).unwrap()
+                ),
+                discriminant(&LuaMessage::Table(t))
+            );
+        })
     }
 
     #[should_panic]
@@ -242,6 +247,9 @@ mod tests {
         use rlua::Error;
 
         let lua = Lua::new();
-        &LuaMessage::from_lua(Value::Error(Error::RuntimeError("foo".to_string())), &lua).unwrap();
+        lua.context(|ctx| {
+            &LuaMessage::from_lua(Value::Error(Error::RuntimeError("foo".to_string())), ctx)
+                .unwrap();
+        })
     }
 }

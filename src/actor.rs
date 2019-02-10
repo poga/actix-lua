@@ -55,31 +55,34 @@ impl LuaActor {
         stopped: Option<String>,
     ) -> Result<LuaActor, LuaError> {
         let prelude = include_str!("lua/prelude.lua");
-        vm.eval::<_, ()>(prelude, Some("Prelude"))?;
-        {
-            let load: Function = vm.globals().get("__load")?;
-            if let Some(script) = started {
-                let res = load.call::<(String, String), ()>((script, "started".to_string()));
+        vm.context(|ctx| {
+            ctx.load(prelude).set_name("Prelude")?.exec()?;
+            {
+                let load: Function = ctx.globals().get("__load")?;
+                if let Some(script) = started {
+                    let res = load.call::<(String, String), ()>((script, "started".to_string()));
 
-                if let Err(e) = res {
-                    return Result::Err(e);
+                    if let Err(e) = res {
+                        return Result::Err(e);
+                    }
+                }
+                if let Some(script) = handle {
+                    let res = load.call::<(String, String), ()>((script, "handle".to_string()));
+
+                    if let Err(e) = res {
+                        return Result::Err(e);
+                    }
+                }
+                if let Some(script) = stopped {
+                    let res = load.call::<(String, String), ()>((script, "stopped".to_string()));
+
+                    if let Err(e) = res {
+                        return Result::Err(e);
+                    }
                 }
             }
-            if let Some(script) = handle {
-                let res = load.call::<(String, String), ()>((script, "handle".to_string()));
-
-                if let Err(e) = res {
-                    return Result::Err(e);
-                }
-            }
-            if let Some(script) = stopped {
-                let res = load.call::<(String, String), ()>((script, "stopped".to_string()));
-
-                if let Err(e) = res {
-                    return Result::Err(e);
-                }
-            }
-        }
+            Ok(())
+        })?;
 
         Result::Ok(LuaActor {
             vm,
@@ -122,89 +125,91 @@ fn invoke(
     let ctx = RefCell::new(ctx);
     let recs = RefCell::new(recs);
 
-    let iter = args
-        .into_iter()
-        .map(|msg| msg.to_lua(&vm).unwrap())
-        .collect();
-    let args = MultiValue::from_vec(iter);
-    // We can't create a function with references to `self` and is 'static since `self` already owns Lua.
-    // A function within Lua owning `self` creates self-borrowing cycle.
-    //
-    // Also, Lua requires all values passed to it is 'static because we can't know when will Lua GC our value.
-    // Therefore, we use scope to make sure these APIs are temporary and don't have to deal with 'static lifetime.
-    //
-    // (Quote from: https://github.com/kyren/rlua/issues/56#issuecomment-363928738
-    // When the scope ends, the Lua function is 100% guaranteed (afaict!) to be "invalidated".
-    // This means that calling the function will cause an immediate Lua error with a message like "error, call of invalidated function".)
-    //
-    // for reference, check https://github.com/kyren/rlua/issues/73#issuecomment-370222198
-    vm.scope(|scope| {
-        let globals = vm.globals();
+    vm.context(|lua_ctx| {
+        let iter = args
+            .into_iter()
+            .map(|msg| msg.to_lua(lua_ctx).unwrap())
+            .collect();
+        let args = MultiValue::from_vec(iter);
+        // We can't create a function with references to `self` and is 'static since `self` already owns Lua.
+        // A function within Lua owning `self` creates self-borrowing cycle.
+        //
+        // Also, Lua requires all values passed to it is 'static because we can't know when will Lua GC our value.
+        // Therefore, we use scope to make sure these APIs are temporary and don't have to deal with 'static lifetime.
+        //
+        // (Quote from: https://github.com/kyren/rlua/issues/56#issuecomment-363928738
+        // When the scope ends, the Lua function is 100% guaranteed (afaict!) to be "invalidated".
+        // This means that calling the function will cause an immediate Lua error with a message like "error, call of invalidated function".)
+        //
+        // for reference, check https://github.com/kyren/rlua/issues/73#issuecomment-370222198
+        lua_ctx.scope(|scope| {
+            let globals = lua_ctx.globals();
 
-        let notify = scope.create_function_mut(|_, msg: LuaMessage| {
-            let mut ctx = ctx.borrow_mut();
-            ctx.notify(msg);
-            Ok(())
-        })?;
-        globals.set("notify", notify)?;
-
-        let notify_later = scope.create_function_mut(|_, (msg, secs): (LuaMessage, u64)| {
-            let mut ctx = ctx.borrow_mut();
-            ctx.notify_later(msg, Duration::new(secs, 0));
-            Ok(())
-        })?;
-        globals.set("notify_later", notify_later)?;
-
-        let do_send =
-            scope.create_function_mut(|_, (recipient_name, msg): (String, LuaMessage)| {
-                let recs = recs.borrow_mut();
-                let rec = recs.get(&recipient_name);
-
-                // TODO: error handling?
-                if let Some(r) = rec {
-                    r.do_send(msg).unwrap();
-                }
+            let notify = scope.create_function_mut(|_, msg: LuaMessage| {
+                let mut ctx = ctx.borrow_mut();
+                ctx.notify(msg);
                 Ok(())
             })?;
-        globals.set("do_send", do_send)?;
+            globals.set("notify", notify)?;
 
-        let send = scope.create_function_mut(
-            |_, (recipient_name, msg, cb_thread_id): (String, LuaMessage, i64)| {
-                // we can't create a lua function which owns `self`
-                // but `self` is needed for resolving `send` future.
-                //
-                // The workaround is we notify ourself with a `SendAttempt` Message
-                // and resolving `send` future in the `handle` function.
-                self_addr
-                    .do_send(SendAttempt {
-                        recipient_name,
-                        msg,
-                        cb_thread_id,
-                    })
-                    .unwrap();
-
+            let notify_later = scope.create_function_mut(|_, (msg, secs): (LuaMessage, u64)| {
+                let mut ctx = ctx.borrow_mut();
+                ctx.notify_later(msg, Duration::new(secs, 0));
                 Ok(())
-            },
-        )?;
-        globals.set("send", send)?;
+            })?;
+            globals.set("notify_later", notify_later)?;
 
-        let terminate = scope.create_function_mut(|_, _: LuaMessage| {
-            let mut ctx = ctx.borrow_mut();
-            ctx.terminate();
-            Ok(())
-        })?;
-        globals.set("terminate", terminate)?;
+            let do_send =
+                scope.create_function_mut(|_, (recipient_name, msg): (String, LuaMessage)| {
+                    let recs = recs.borrow_mut();
+                    let rec = recs.get(&recipient_name);
 
-        let lua_handle: Result<Function, LuaError> = globals.get(func_name);
-        if let Ok(f) = lua_handle {
-            match f.call::<MultiValue, Value>(args) {
-                Err(e) => panic!("{:?}", e),
-                Ok(ret) => Ok(LuaMessage::from_lua(ret, &vm).unwrap()),
+                    // TODO: error handling?
+                    if let Some(r) = rec {
+                        r.do_send(msg).unwrap();
+                    }
+                    Ok(())
+                })?;
+            globals.set("do_send", do_send)?;
+
+            let send = scope.create_function_mut(
+                |_, (recipient_name, msg, cb_thread_id): (String, LuaMessage, i64)| {
+                    // we can't create a lua function which owns `self`
+                    // but `self` is needed for resolving `send` future.
+                    //
+                    // The workaround is we notify ourself with a `SendAttempt` Message
+                    // and resolving `send` future in the `handle` function.
+                    self_addr
+                        .do_send(SendAttempt {
+                            recipient_name,
+                            msg,
+                            cb_thread_id,
+                        })
+                        .unwrap();
+
+                    Ok(())
+                },
+            )?;
+            globals.set("send", send)?;
+
+            let terminate = scope.create_function_mut(|_, _: LuaMessage| {
+                let mut ctx = ctx.borrow_mut();
+                ctx.terminate();
+                Ok(())
+            })?;
+            globals.set("terminate", terminate)?;
+
+            let lua_handle: Result<Function, LuaError> = globals.get(func_name);
+            if let Ok(f) = lua_handle {
+                match f.call::<MultiValue, Value>(args) {
+                    Err(e) => panic!("{:?}", e),
+                    Ok(ret) => Ok(LuaMessage::from_lua(ret, lua_ctx).unwrap()),
+                }
+            } else {
+                // return nil if handle is not defined
+                Ok(LuaMessage::Nil)
             }
-        } else {
-            // return nil if handle is not defined
-            Ok(LuaMessage::Nil)
-        }
+        })
     })
 }
 
@@ -813,13 +818,15 @@ mod tests {
         let system = System::new("test");
 
         let vm = Lua::new();
-        vm.globals()
-            .set(
-                "greet",
-                vm.create_function(|_, name: String| Ok(format!("Hello, {}!", name)))
-                    .unwrap(),
-            )
-            .unwrap();
+        vm.context(|ctx| {
+            ctx.globals()
+                .set(
+                    "greet",
+                    ctx.create_function(|_, name: String| Ok(format!("Hello, {}!", name)))
+                        .unwrap(),
+                )
+                .unwrap();
+        });
 
         let addr = LuaActorBuilder::new()
             .on_handle_with_lua(
