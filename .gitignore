@@ -3,3 +3,4 @@ target
 Cargo.lock
 .idea
 actix-lua.iml
+.DS_Store

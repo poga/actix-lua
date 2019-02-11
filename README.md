@@ -69,7 +69,7 @@ Add `actix-lua` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-actix-lua = "0.5"
+actix-lua = "0.7"
 ```
 
 ## Example
