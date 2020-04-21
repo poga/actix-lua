@@ -306,7 +306,7 @@ impl Handler<SendAttempt> for LuaActor {
     fn handle(&mut self, attempt: SendAttempt, ctx: &mut Context<Self>) -> Self::Result {
         let rec = &self.recipients[&attempt.recipient_name];
         let self_addr = ctx.address().clone();
-        rec.send(attempt.msg.clone())
+        let fut = rec.send(attempt.msg.clone())
             .into_actor(self)
             .then(move |res, _, _| {
                 match res {
@@ -319,9 +319,8 @@ impl Handler<SendAttempt> for LuaActor {
                     }
                 };
                 actix::fut::ok(())
-            })
-            .wait(ctx);
-
+            });
+        ctx.wait(fut.map(|_: std::result::Result<(), LuaError>,_,_| ()));
         LuaMessage::Nil
     }
 }

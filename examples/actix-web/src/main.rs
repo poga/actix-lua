@@ -7,7 +7,7 @@ extern crate futures;
 use actix::prelude::*;
 use actix_lua::{LuaActor, LuaActorBuilder, LuaMessage};
 use actix_web::{
-    http, middleware, server, App, AsyncResponder, FutureResponse, HttpResponse, Path, State,
+    http, middleware, App,  HttpResponse,
 };
 use futures::Future;
 
@@ -46,7 +46,7 @@ fn main() {
     });
 
     // Start http server
-    server::new(move || {
+    actix_web:: ::new(move || {
         App::with_state(AppState{lua: addr.clone()})
             // enable logger
             .middleware(middleware::Logger::default())
