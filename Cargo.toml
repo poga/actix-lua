@@ -19,7 +19,6 @@ path = "src/lib.rs"
 [dependencies]
 actix = "0.9"
 futures = "0.3"
-futures-util = "0.3"
 tokio = "0.2"
 rlua = "0.17"
 uuid = { version = "0.8", features = ["v4"] }
