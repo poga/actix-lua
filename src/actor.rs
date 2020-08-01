@@ -306,7 +306,7 @@ impl Handler<SendAttempt> for LuaActor {
     fn handle(&mut self, attempt: SendAttempt, ctx: &mut Context<Self>) -> Self::Result {
         let rec = &self.recipients[&attempt.recipient_name];
         let self_addr = ctx.address().clone();
-        rec.send(attempt.msg.clone())
+        let fut = rec.send(attempt.msg.clone())
             .into_actor(self)
             .then(move |res, _, _| {
                 match res {
@@ -319,9 +319,8 @@ impl Handler<SendAttempt> for LuaActor {
                     }
                 };
                 actix::fut::ok(())
-            })
-            .wait(ctx);
-
+            });
+        ctx.wait(fut.map(|_: std::result::Result<(), LuaError>,_,_| ()));
         LuaMessage::Nil
     }
 }
@@ -332,7 +331,6 @@ mod tests {
     use futures_timer::Delay;
     use std::collections::HashMap;
     use std::time::Duration;
-    use tokio::prelude::Future;
 
     use crate::builder::LuaActorBuilder;
 
@@ -350,13 +348,19 @@ mod tests {
         let lua_addr = lua_actor_with_handle(r#"return ctx.msg + 1"#).start();
 
         let l = lua_addr.send(LuaMessage::from(1));
-        Arbiter::spawn(
-            l.map(|res| {
-                assert_eq!(res, LuaMessage::from(2));
-                System::current().stop();
-            })
-            .map_err(|e| println!("actor dead {}", e)),
-        );
+        let fut = async move {
+            let res = l.await;
+            match res {
+                Ok(res) => {
+                    assert_eq!(res, LuaMessage::from(2));
+                    System::current().stop();
+                }
+                Err(e) => {
+                    println!("actor dead {}", e);
+                }
+            };
+        };
+        Arbiter::spawn(fut);
 
         system.run();
     }
@@ -387,14 +391,23 @@ mod tests {
         .start();
 
         let l = lua_addr.send(LuaMessage::from(0));
-        Arbiter::spawn(
-            l.map(|_| {
-                // it should panic
-                System::current().stop();
-            })
-            .map_err(|e| println!("actor dead {}", e)),
-        );
-
+        let fut = async move {
+            let res = l.await;
+            match res {
+                Ok(_res) => {
+                    // it should panic. 
+                    // and it does, but it seems the test does not pass
+                    // running 1 test
+                    // thread 'actor::tests::lua_actor_user_error' panicked at ... src/actor.rs:205:31
+                    System::current().stop();
+                }
+                Err(e) => {
+                    println!("actor dead {}", e);
+                }
+            };
+        };
+        Arbiter::spawn(fut);
+        
         system.run();
     }
 
@@ -410,16 +423,21 @@ mod tests {
         .start();
 
         let l = lua_addr.send(LuaMessage::from(3));
-        Arbiter::spawn(
-            l.map(|res| {
-                let mut t = HashMap::new();
-                t.insert("x".to_string(), LuaMessage::from(1));
-
-                assert_eq!(res, LuaMessage::from(t));
-                System::current().stop();
-            })
-            .map_err(|e| println!("actor dead {}", e)),
-        );
+        let fut = async move {
+            let res = l.await;
+            match res {
+                Ok(res) => {
+                    let mut t = HashMap::new();
+                    t.insert("x".to_string(), LuaMessage::from(1));
+                    assert_eq!(res, LuaMessage::from(t));
+                    System::current().stop();
+                }
+                Err(e) => {
+                    println!("actor dead {}", e);
+                }
+            };
+        };
+        Arbiter::spawn(fut);
 
         system.run();
     }
@@ -439,20 +457,32 @@ mod tests {
         .start();
 
         let l = lua_addr.send(LuaMessage::Nil);
-        Arbiter::spawn(
-            l.map(move |res| {
-                assert_eq!(res, LuaMessage::from(1));
-                let l2 = lua_addr.send(LuaMessage::Nil);
-                Arbiter::spawn(
-                    l2.map(|res| {
-                        assert_eq!(res, LuaMessage::from(2));
-                        System::current().stop();
-                    })
-                    .map_err(|e| println!("actor dead {}", e)),
-                );
-            })
-            .map_err(|e| println!("actor dead {}", e)),
-        );
+        let fut = async move {
+            let res = l.await;
+            match res {
+                Ok(res) => {
+                    assert_eq!(res, LuaMessage::from(1));
+                    let l2 = lua_addr.send(LuaMessage::Nil);
+                    let fut = async move {
+                        let res = l2.await;
+                        match res {
+                            Ok(res) => {
+                                assert_eq!(res, LuaMessage::from(2));
+                                System::current().stop();
+                            }
+                            Err(e) => {
+                                println!("actor dead {}", e);
+                            }
+                        };
+                    };
+                    Arbiter::spawn(fut);
+                }
+                Err(e) => {
+                    println!("actor dead {}", e);
+                }
+            };
+        };
+        Arbiter::spawn(fut);
 
         system.run();
     }
@@ -480,17 +510,25 @@ mod tests {
             .unwrap()
             .start();
 
-        let delay = Delay::new(Duration::from_secs(1)).map(move |()| {
-            let l = addr.send(LuaMessage::from(1));
-            Arbiter::spawn(
-                l.map(|res| {
-                    assert_eq!(res, LuaMessage::from(101));
-                    System::current().stop();
-                })
-                .map_err(|e| println!("actor dead {}", e)),
-            )
-        });
-        Arbiter::spawn(delay.map_err(|e| println!("actor dead {}", e)));
+        let fut = async move {
+            let _ = Delay::new(Duration::from_secs(1)).await.map(move |()| {
+                let l = addr.send(LuaMessage::from(1));
+                let fut = async move {
+                    let res = l.await;
+                    match res {
+                        Ok(res) => {
+                            assert_eq!(res, LuaMessage::from(101));
+                            System::current().stop();
+                        }
+                        Err(e) => {
+                            println!("actor dead {}", e);
+                        }
+                    };
+                };
+                Arbiter::spawn(fut)
+            });
+        };
+        Arbiter::spawn(fut);
 
         system.run();
     }
@@ -517,19 +555,26 @@ mod tests {
             .build()
             .unwrap()
             .start();
-
-        let delay = Delay::new(Duration::from_secs(2)).map(move |()| {
-            let l2 = addr.send(LuaMessage::from(1));
-            Arbiter::spawn(
-                l2.map(|res| {
-                    assert_eq!(res, LuaMessage::from(101));
-                    System::current().stop();
-                })
-                .map_err(|e| println!("actor dead {}", e)),
-            )
-        });
-        Arbiter::spawn(delay.map_err(|e| println!("actor dead {}", e)));
-
+        let fut = async move {
+            let _ = Delay::new(Duration::from_secs(2)).await.map(move |()| {
+                let l2 = addr.send(LuaMessage::from(1));
+                let fut = async move {
+                    let res = l2.await;
+                    match res {
+                        Ok(res) => {
+                            assert_eq!(res, LuaMessage::from(101));
+                            System::current().stop();
+                        }
+                        Err(e) => {
+                            println!("actor dead {}", e);
+                        }
+                    };
+                };
+                Arbiter::spawn(fut)
+            });
+        };
+        
+        Arbiter::spawn(fut);
         system.run();
     }
 
@@ -612,17 +657,22 @@ mod tests {
         let addr = actor.start();
 
         let l = addr.send(LuaMessage::Nil);
-        Arbiter::spawn(
-            l.map(move |res| {
-                assert_eq!(
-                    discriminant(&res),
-                    discriminant(&LuaMessage::ThreadYield("foo".to_string()))
-                );
-                System::current().stop();
-            })
-            .map_err(|e| println!("actor dead {}", e)),
-        );
-
+        let fut = async move {
+            let res = l.await;
+            match res {
+                Ok(res) => {
+                    assert_eq!(
+                        discriminant(&res),
+                        discriminant(&LuaMessage::ThreadYield("foo".to_string()))
+                    );
+                    System::current().stop();
+                }
+                Err(e) => {
+                    println!("actor dead {}", e);
+                }
+            };
+        };
+        Arbiter::spawn(fut);
         system.run();
     }
 
@@ -695,15 +745,22 @@ mod tests {
         let addr = actor.start();
 
         let l = addr.send(LuaMessage::String("Hello".to_string()));
-        Arbiter::spawn(
-            l.map(move |res| {
-                assert_eq!(
-                    discriminant(&res),
-                    discriminant(&LuaMessage::ThreadYield("foo".to_string()))
-                );
-            })
-            .map_err(|e| println!("actor dead {}", e)),
-        );
+        let fut = async move {
+            let res = l.await;
+            match res {
+                Ok(res) => {
+                    assert_eq!(
+                        discriminant(&res),
+                        discriminant(&LuaMessage::ThreadYield("foo".to_string()))
+                    );
+                    System::current().stop();
+                }
+                Err(e) => {
+                    println!("actor dead {}", e);
+                }
+            };
+        };
+        Arbiter::spawn(fut);
 
         system.run();
     }
@@ -751,13 +808,18 @@ mod tests {
         let addr = actor.start();
 
         let l = addr.send(LuaMessage::Nil);
-        Arbiter::spawn(
-            l.map(|res| {
-                assert_eq!(res, LuaMessage::Nil);
-            })
-            .map_err(|e| println!("actor dead {}", e)),
-        );
-
+        let fut = async move {
+            let res = l.await;
+            match res {
+                Ok(res) => {
+                    assert_eq!(res, LuaMessage::Nil);
+                }
+                Err(e) => {
+                    println!("actor dead {}", e);
+                }
+            };
+        };
+        Arbiter::spawn(fut);
         system.run();
     }
 
@@ -776,10 +838,19 @@ mod tests {
             .build()
             .unwrap()
             .start();
-        let delay = Delay::new(Duration::from_secs(1)).map(move |()| {
-            System::current().stop();
-        });
-        Arbiter::spawn(delay.map_err(|e| println!("actor dead {}", e)));
+        
+        let fut = async move {
+            let res = Delay::new(Duration::from_secs(1)).await.map(move |()| {
+                System::current().stop();
+            });
+            match res {
+                Ok(_)=> {}
+                Err(e) => {
+                    println!("actor dead {}", e);
+                }
+            };
+        };
+        Arbiter::spawn(fut);
 
         system.run();
     }
@@ -802,13 +873,19 @@ mod tests {
             .unwrap()
             .start();
         let l = addr.send(LuaMessage::from(1));
-        Arbiter::spawn(
-            l.map(|res| {
-                assert_eq!(res, LuaMessage::from(2));
-                System::current().stop();
-            })
-            .map_err(|e| println!("actor dead {}", e)),
-        );
+        let fut = async move {
+            let res = l.await;
+            match res {
+                Ok(res) => {
+                    assert_eq!(res, LuaMessage::from(2));
+                    System::current().stop();
+                }
+                Err(e) => {
+                    println!("actor dead {}", e);
+                }
+            };
+        };
+        Arbiter::spawn(fut);
 
         system.run();
     }
@@ -839,13 +916,19 @@ mod tests {
             .start();
 
         let l = addr.send(LuaMessage::from("World"));
-        Arbiter::spawn(
-            l.map(|res| {
-                assert_eq!(res, LuaMessage::from("Hello, World!"));
-                System::current().stop();
-            })
-            .map_err(|e| println!("actor dead {}", e)),
-        );
+        let fut = async move {
+            let res = l.await;
+            match res {
+                Ok(res) => {
+                    assert_eq!(res, LuaMessage::from("Hello, World!"));
+                    System::current().stop();
+                }
+                Err(e) => {
+                    println!("actor dead {}", e);
+                }
+            };
+        };
+        Arbiter::spawn(fut);
 
         system.run();
     }
